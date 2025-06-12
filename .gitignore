@@ -1,2 +1,4 @@
 venv/
 .env
+useful_prompt.md
+calculator/pkg/__pycache__/
