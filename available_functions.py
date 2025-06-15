@@ -29,8 +29,6 @@ def call_function(function_call_part, verbose=False):
     args = function_call_part.args
     function_name = function_call_part.name.lower()
 
-
-
     function_dict = {
         "get_files_info": get_files_info,
         "get_file_content": get_file_content,
