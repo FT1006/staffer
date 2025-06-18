@@ -25,7 +25,7 @@ class TestCalculator(unittest.TestCase):
         self.assertEqual(result, 5)
 
     def test_nested_expression(self):
-        result = self.calculator.evaluate("3 * 4 + 5")
+        result = self.calculator.evaluate("3 + 7 * 2")
         self.assertEqual(result, 17)
 
     def test_complex_expression(self):
