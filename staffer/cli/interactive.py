@@ -1,16 +1,19 @@
 """Interactive mode for Staffer - continuous prompt loop."""
 
 from ..main import process_prompt
+from ..session import load_session, save_session
 
 
 def main():
     """Main interactive mode entry point."""
     print("Interactive Mode - Staffer AI Assistant")
     print("Type 'exit' or 'quit' to end the session")
-    print()
     
-    # Initialize conversation history
-    messages = []
+    # Load previous session if it exists
+    messages = load_session()
+    if messages:
+        print(f"Restored conversation with {len(messages)} previous messages")
+    print()
     
     while True:
         try:
@@ -21,6 +24,8 @@ def main():
                 continue
                 
             if user_input.lower() in ['exit', 'quit']:
+                # Save session before exiting
+                save_session(messages)
                 print("Goodbye!")
                 break
                 
@@ -29,6 +34,8 @@ def main():
             print()  # Add spacing between responses
             
         except (EOFError, KeyboardInterrupt):
+            # Save session before exiting on Ctrl+C
+            save_session(messages)
             print("\nGoodbye!")
             break
         except Exception as e:
