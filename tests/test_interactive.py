@@ -4,35 +4,43 @@ import subprocess
 import sys
 import os
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 
 def test_interactive_mode_basic_loop():
     """Test that interactive mode actually enters loop and calls input."""
-    # Mock the process_prompt to avoid API calls in tests
-    with patch('staffer.cli.interactive.process_prompt') as mock_process:
-        from staffer.cli import interactive
+    # Mock the genai client at module level to prevent API key errors
+    with patch('google.genai.Client') as mock_client:
+        mock_client.return_value = MagicMock()
         
-        with patch('builtins.input', side_effect=['exit']) as mock_input:
-            result = interactive.main()
-        
-        # Proves we entered the loop and actually called input
-        mock_input.assert_called()
-        assert result is None
+        # Mock the process_prompt to avoid API calls in tests
+        with patch('staffer.cli.interactive.process_prompt') as mock_process:
+            from staffer.cli import interactive
+            
+            with patch('builtins.input', side_effect=['exit']) as mock_input:
+                result = interactive.main()
+            
+            # Proves we entered the loop and actually called input
+            mock_input.assert_called()
+            assert result is None
 
 
 def test_interactive_prompt_shows(capsys):
     """Test that interactive mode shows proper prompt to user."""
-    # Mock the process_prompt to avoid API calls in tests
-    with patch('staffer.cli.interactive.process_prompt'):
-        from staffer.cli import interactive
+    # Mock the genai client at module level to prevent API key errors
+    with patch('google.genai.Client') as mock_client:
+        mock_client.return_value = MagicMock()
         
-        with patch('builtins.input', side_effect=['exit']):
-            interactive.main()
-        
-        # Check real stdout output, not mocked
-        captured = capsys.readouterr()
-        assert "staffer>" in captured.out
+        # Mock the process_prompt to avoid API calls in tests
+        with patch('staffer.cli.interactive.process_prompt'):
+            from staffer.cli import interactive
+            
+            with patch('builtins.input', side_effect=['exit']):
+                interactive.main()
+            
+            # Check real stdout output, not mocked
+            captured = capsys.readouterr()
+            assert "staffer>" in captured.out
 
 
 def test_interactive_flag_detection():
