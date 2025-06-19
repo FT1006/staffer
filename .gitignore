@@ -3,6 +3,7 @@ venv/
 useful_prompt.md
 calculator/pkg/__pycache__/
 functions/__pycache__/
+CLAUDE.md
 
 # Python package build artifacts
 *.egg-info/
@@ -26,3 +27,5 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+codex_session_learning.md
+interactive_mode_roadmap.md

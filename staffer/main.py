@@ -11,26 +11,10 @@ api_key = os.environ.get("GEMINI_API_KEY")
 
 client = genai.Client(api_key=api_key)
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Staffer - AI coding agent that works in any directory",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""Examples:
-  staffer "analyze this codebase"
-  staffer "fix the bug in main.py" --verbose
-  staffer "create a test file for the utils module" """
-    )
-    parser.add_argument("prompt", help="The task or question for the AI agent")
-    parser.add_argument("--verbose", action="store_true", help="Show detailed function call information")
-    parser.add_argument("--version", action="version", version="Staffer 0.1.0")
-    
-    args = parser.parse_args()
-    
+def process_prompt(prompt, verbose=False):
+    """Process a single prompt using the AI agent."""
     working_directory = os.getcwd()
     available_functions = get_available_functions(working_directory)
-    
-    prompt = args.prompt
-    verbose = args.verbose
 
     if verbose:
         print(f"Working directory: {working_directory}")
@@ -98,6 +82,36 @@ All paths you provide should be relative to the working directory. You do not ne
     if verbose:
         print(f"Prompt tokens: {promptTokens}")
         print(f"Response tokens: {responseTokens}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Staffer - AI coding agent that works in any directory",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Examples:
+  staffer "analyze this codebase"
+  staffer "fix the bug in main.py" --verbose
+  staffer "create a test file for the utils module"
+  staffer --interactive """
+    )
+    parser.add_argument("prompt", nargs='?', help="The task or question for the AI agent")
+    parser.add_argument("--verbose", action="store_true", help="Show detailed function call information")
+    parser.add_argument("--interactive", action="store_true", help="Start interactive mode")
+    parser.add_argument("--version", action="version", version="Staffer 0.1.0")
+    
+    args = parser.parse_args()
+    
+    # Handle interactive mode
+    if args.interactive:
+        from .cli.interactive import main as interactive_main
+        interactive_main()
+        return
+    
+    # Require prompt for single command mode
+    if not args.prompt:
+        parser.error("prompt is required unless using --interactive mode")
+    
+    process_prompt(args.prompt, args.verbose)
 
 if __name__ == "__main__":
     main()

@@ -5,6 +5,8 @@ Staffer is an intelligent AI assistant that uses Google's Gemini AI model to hel
 ## Features
 
 - **Global CLI Tool**: Works in any directory, automatically detects working directory
+- **Interactive Mode**: Continuous conversation mode for iterative development
+- **Single Command Mode**: Quick one-off tasks and automation
 - **Agentic AI Loop**: Performs up to 20 iterations of reasoning and action-taking
 - **Secure Operations**: All operations are constrained to the current working directory
 - **File Operations**: Read, write, and execute Python files with safety constraints
@@ -44,6 +46,8 @@ export GEMINI_API_KEY=your_actual_api_key_here
 
 Once installed, you can use `staffer` command from anywhere:
 
+### Single Command Mode (default)
+
 ```bash
 # Navigate to any project directory
 cd /path/to/your/project
@@ -58,6 +62,28 @@ staffer "Add multiplication support to the calculator" --verbose
 
 # Get help
 staffer --help
+```
+
+### Interactive Mode
+
+For ongoing conversations and iterative development:
+
+```bash
+# Start interactive mode
+staffer --interactive
+
+# Example interactive session:
+staffer> what files are in this project?
+-> [AI analyzes and lists files]
+
+staffer> explain the main.py file
+-> [AI reads and explains the code]
+
+staffer> add error handling to the API functions
+-> [AI implements error handling]
+
+staffer> exit
+Goodbye!
 ```
 
 ## Examples
