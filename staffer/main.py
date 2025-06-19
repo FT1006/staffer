@@ -11,8 +11,10 @@ api_key = os.environ.get("GEMINI_API_KEY")
 
 client = genai.Client(api_key=api_key)
 
-def process_prompt(prompt, verbose=False):
+def process_prompt(prompt, verbose=False, messages=None):
     """Process a single prompt using the AI agent."""
+    if messages is None:
+        messages = []
     working_directory = os.getcwd()
     available_functions = get_available_functions(working_directory)
 
@@ -33,12 +35,12 @@ When a user asks a question or makes a request, make a function call plan. You c
 All paths you provide should be relative to the working directory. You do not need to specify the working directory in your function calls as it is automatically injected for security reasons.
 """
 
-    messages = [
-        types.Content(
-            role="user",
-            parts=[types.Part(text=prompt)]
-        )
-    ]
+    # Add current user prompt to existing messages
+    current_message = types.Content(
+        role="user",
+        parts=[types.Part(text=prompt)]
+    )
+    messages.append(current_message)
 
     for i in range(20):
         function_called = False
@@ -56,8 +58,9 @@ All paths you provide should be relative to the working directory. You do not ne
 
         if res.candidates:
             for candidate in res.candidates:
+                # Add assistant response to message history
+                messages.append(candidate.content)
                 for part in candidate.content.parts:
-                    messages.append(part)
                     if part.function_call:
                         function_called = True
                         if verbose:
@@ -82,6 +85,8 @@ All paths you provide should be relative to the working directory. You do not ne
     if verbose:
         print(f"Prompt tokens: {promptTokens}")
         print(f"Response tokens: {responseTokens}")
+    
+    return messages
 
 
 def main():
