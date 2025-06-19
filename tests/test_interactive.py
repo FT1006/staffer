@@ -61,3 +61,39 @@ def test_interactive_flag_detection():
     
     assert result.returncode == 0
     assert "Interactive Mode" in result.stdout or "staffer>" in result.stdout
+
+
+def test_message_history_persistence():
+    """Interactive mode should maintain message history between prompts."""
+    # Mock the Google AI modules
+    with patch.dict(sys.modules, {
+        'google': MagicMock(),
+        'google.genai': MagicMock(),
+    }):
+        with patch('google.genai.Client'):
+            # Mock process_prompt to capture calls and return growing history  
+            with patch('staffer.cli.interactive.process_prompt') as mock_process:
+                # Setup side effects: return growing message history
+                mock_process.side_effect = [
+                    ['msg1'],  # First call returns 1 message
+                    ['msg1', 'msg2']  # Second call returns 2 messages
+                ]
+                
+                from staffer.cli import interactive
+
+                # Simulate user input: two prompts then exit
+                with patch('builtins.input', side_effect=['hello', 'what is my name?', 'exit']):
+                    interactive.main()
+
+                # Verify process_prompt was called twice
+                assert mock_process.call_count == 2
+
+                # Check the arguments passed to each call
+                first_call = mock_process.call_args_list[0]
+                second_call = mock_process.call_args_list[1]
+
+                # First call should have empty messages
+                assert first_call.kwargs['messages'] == []
+                
+                # Second call should have the history from first call
+                assert second_call.kwargs['messages'] == ['msg1']

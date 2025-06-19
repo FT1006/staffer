@@ -9,6 +9,9 @@ def main():
     print("Type 'exit' or 'quit' to end the session")
     print()
     
+    # Initialize conversation history
+    messages = []
+    
     while True:
         try:
             print("staffer> ", end="", flush=True)
@@ -21,8 +24,8 @@ def main():
                 print("Goodbye!")
                 break
                 
-            # Process the command using existing single-command logic
-            process_prompt(user_input)
+            # Process the command and update conversation history
+            messages = process_prompt(user_input, messages=messages)
             print()  # Add spacing between responses
             
         except (EOFError, KeyboardInterrupt):
