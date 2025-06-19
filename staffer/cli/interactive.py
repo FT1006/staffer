@@ -1,6 +1,5 @@
 """Interactive mode for Staffer - continuous prompt loop."""
 
-import sys
 from ..main import process_prompt
 
 
