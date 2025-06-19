@@ -16,7 +16,7 @@ def run_python_file(working_directory, file_path):
         result = subprocess.run(args, timeout=30, capture_output=True, text=True)
         if result.returncode != 0:
             return f"Process exited with code {result.returncode}"
-        elif result.stdout == None:
+        elif result.stdout is None:
             return "No output produced"
         return f'STDOUT: {result.stdout}\nSTDERR: {result.stderr}'
     except Exception as e:
