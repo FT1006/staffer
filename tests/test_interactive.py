@@ -75,7 +75,7 @@ def test_message_history_persistence():
     # Use factory-based approach with fake_llm
     from tests.conftest import FakeGeminiClient
     
-    with patch('staffer.llm.get_client') as mock_get_client:
+    with patch('staffer.cli.interactive.get_client') as mock_get_client:
         fake_client = FakeGeminiClient()
         mock_get_client.return_value = fake_client
         
