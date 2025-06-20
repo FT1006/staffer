@@ -41,3 +41,4 @@ quick-data-mcp/
 .DS_Store
 HANDOVER_*.md
 excel-mcp-server/
+docs/ci-test-debugging-guide.md
