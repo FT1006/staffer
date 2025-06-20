@@ -6,47 +6,98 @@ from unittest.mock import patch, MagicMock
 from tests.factories import user, model
 
 
-def test_reset_command_clears_conversation_history():
-    """Test /reset command clears conversation but keeps current directory."""
+def test_reset_command_clears_history_unit():
+    """Unit test: /reset command clears conversation history in memory."""
     from tests.conftest import FakeGeminiClient
-    
+    from tests.factories import user, model
+
     with patch('staffer.cli.interactive.get_client') as mock_get_client:
         fake_client = FakeGeminiClient()
         mock_get_client.return_value = fake_client
-        
-        # Mock session operations
-        with patch('staffer.cli.interactive.load_session') as mock_load:
+
+        # Setup initial message history
+        initial_messages = [
+            user("what files are here?"),
+            model("I can see several files..."),
+            user("tell me about main.py"),
+            model("The main.py file contains...")
+        ]
+
+        # Mock session loading to return history
+        with patch('staffer.cli.interactive.load_session', return_value=initial_messages):
             with patch('staffer.cli.interactive.save_session') as mock_save:
-                # Start with existing conversation history
-                existing_messages = [
-                    user("What files are here?"),
-                    model("I can see several files in the current directory..."),
-                    user("Analyze main.py"),
-                    model("Here's my analysis of main.py...")
-                ]
-                mock_load.return_value = existing_messages
-                
-                from staffer.cli import interactive
-                
-                # Simulate user typing /reset then exit
-                with patch('builtins.input', side_effect=['/reset', 'exit']):
-                    interactive.main()
-                
-                # Verify save_session was called at least twice: 
-                # 1. After working directory initialization 
-                # 2. After /reset with empty messages
-                # 3. After exit 
-                assert mock_save.call_count >= 2
-                
-                # Look for the /reset save call - should be empty list
-                reset_found = False
-                for call in mock_save.call_args_list:
-                    saved_messages = call[0][0]  # First positional argument
-                    if len(saved_messages) == 0:  # Found the reset call
-                        reset_found = True
-                        break
-                
-                assert reset_found, "Should have found a save call with empty messages from /reset"
+                with patch('staffer.cli.interactive.process_prompt') as mock_process:
+                    from staffer.cli import interactive
+
+                    # User types /reset then exit
+                    with patch('builtins.input', side_effect=['/reset', 'exit']):
+                        interactive.main()
+
+                    # /reset should bypass LLM call
+                    mock_process.assert_not_called()
+
+                    # Should save an empty message list after reset
+                    mock_save.assert_called()
+                    final_messages = mock_save.call_args_list[-1][0][0]  # Last call's first argument
+
+                    # After reset, messages should be empty (just working directory context)
+                    assert len(final_messages) == 0 or all(
+                        "working directory" in str(msg).lower() for msg in final_messages
+                    ), "Reset should clear conversation history"
+
+
+def test_reset_command_preserves_cwd_component(capsys, tmp_path):
+    """Component test: /reset clears history but preserves working directory context."""
+    from tests.conftest import FakeGeminiClient
+    from tests.factories import user, model
+    import tempfile
+
+    # Use temp directory for session storage
+    session_dir = tmp_path / ".staffer"
+    session_file = session_dir / "current_session.json"
+
+    with patch('staffer.session.get_session_file_path', return_value=session_file):
+        with patch('staffer.cli.interactive.get_client') as mock_get_client:
+            fake_client = FakeGeminiClient()
+            mock_get_client.return_value = fake_client
+
+            # Create initial session with some history
+            initial_messages = [
+                user("what files are here?"),
+                model("I can see several files..."),
+                user("tell me about main.py"),
+                model("The main.py file contains...")
+            ]
+
+            # Save initial session to disk
+            from staffer.session import save_session
+            save_session(initial_messages)
+
+            from staffer.cli import interactive
+
+            # User types /reset, then asks about location, then exits
+            with patch('builtins.input', side_effect=['/reset', 'where are we?', 'exit']):
+                interactive.main()
+
+            # Check printed output includes reset confirmation
+            captured = capsys.readouterr()
+            assert "session cleared" in captured.out.lower() or "starting fresh" in captured.out.lower(), \
+                "User should see reset confirmation"
+
+            # Check that working directory is still present in LLM calls
+            # The fake client should have received the second prompt with current directory
+            assert fake_client.call_count >= 1, "LLM should be called for 'where are we?' prompt"
+
+            # Check the system instruction contains current working directory
+            last_call_system_instruction = fake_client.last_system_instruction
+            current_cwd = str(Path.cwd())
+            assert current_cwd in last_call_system_instruction, \
+                f"System instruction should contain current working directory {current_cwd}"
+
+            # Verify session file on disk is now empty/minimal
+            from staffer.session import load_session
+            final_messages = load_session()
+            assert len(final_messages) <= 2, "Session should be cleared after reset"
 
 
 def test_session_command_shows_current_info():

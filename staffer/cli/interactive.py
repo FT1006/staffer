@@ -7,7 +7,6 @@ from ..main import process_prompt
 from ..session import load_session, save_session, create_working_directory_message
 from ..available_functions import get_available_functions, call_function
 from ..llm import get_client
-from ..ui import get_terminal_ui
 
 
 def should_reinitialize_working_directory(messages, current_dir):
