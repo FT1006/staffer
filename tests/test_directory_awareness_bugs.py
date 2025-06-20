@@ -172,3 +172,56 @@ def test_tool_results_visible_to_ai_after_restore(tmp_path, fake_llm):
             f"AI should see actual results, got: '{full_context}'"
         assert "README.md" in full_context, \
             f"AI should see actual results, got: '{full_context}'"
+
+
+def test_directory_change_detection_bug(tmp_path, fake_llm):
+    """AI should update working directory when user changes directories between interactions."""
+    session_file = tmp_path / "current_session.json"
+    
+    with patch('staffer.session.get_session_file_path', return_value=str(session_file)):
+        # Step 1: Start session in directory A
+        dir_a = tmp_path / "project"
+        dir_a.mkdir()
+        (dir_a / "project_file.py").write_text("# project file")
+        
+        with pushd(dir_a):
+            # Simulate first interaction
+            from staffer.main import process_prompt
+            messages = process_prompt("where am I?")
+            save_session(messages)
+        
+        # Step 2: User changes to subdirectory (simulate: cd learn-pub-sub-starter)
+        dir_b = dir_a / "learn-pub-sub-starter"
+        dir_b.mkdir()
+        (dir_b / "starter_file.go").write_text("// starter file")
+        
+        with pushd(dir_b):
+            # Step 3: Continue session in new directory
+            loaded_messages = load_session()
+            
+            # This should build prompt with CURRENT directory (dir_b), not old directory (dir_a)
+            from staffer.main import build_prompt
+            prompt = build_prompt(loaded_messages, working_directory=str(dir_b))
+            
+            # The prompt should reflect the NEW working directory
+            assert str(dir_b) in prompt, \
+                f"System prompt should show current directory {dir_b}, got: {prompt}"
+            assert "learn-pub-sub-starter" in prompt, \
+                f"System prompt should show current directory name, got: {prompt}"
+            
+            # Simulate asking "where am I?" in new directory
+            new_messages = process_prompt("where am I?", messages=loaded_messages)
+            
+            # Extract AI's response about location
+            ai_responses = [
+                msg.parts[0].text for msg in new_messages 
+                if msg.role == "model" and msg.parts and msg.parts[0].text
+            ]
+            
+            location_response = " ".join(ai_responses)
+            
+            # AI should state the NEW directory, not the old one
+            assert str(dir_b) in location_response, \
+                f"AI should state current directory {dir_b}, but said: '{location_response}'"
+            assert str(dir_a) not in location_response or str(dir_b) in location_response, \
+                f"AI should not have stale directory reference without current directory, got: '{location_response}'"

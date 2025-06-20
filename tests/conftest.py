@@ -14,14 +14,15 @@ except ImportError:
 class FakeGemini:
     """Fake Gemini client for testing that returns configurable responses."""
     
-    def __init__(self, fc_name="get_files_info", fc_response=None):
+    def __init__(self, fc_name="get_files_info", fc_response=None, call_function_once=True):
         self.fc_name = fc_name
         self.fc_response = fc_response or {"result": ["test_file.py"]}
         self.call_count = 0
         self.last_request = None
+        self.call_function_once = call_function_once
     
     def generate_content(self, model=None, contents=None, config=None, **kwargs):
-        """Generate a fake response with function call."""
+        """Generate a fake response with function call or text."""
         self.call_count += 1
         self.last_request = {
             'model': model,
@@ -32,23 +33,39 @@ class FakeGemini:
         
         # Create mock response
         response = MagicMock()
-        response.text = f"I'll use {self.fc_name} to help you."
         response.usage_metadata.prompt_token_count = 10
         response.usage_metadata.candidates_token_count = 5
         response.usage_metadata.total_token_count = 15
         
-        # Create candidate with function call
+        # Decide whether to call function or return text
+        should_call_function = (self.call_function_once and self.call_count == 1) or \
+                               (not self.call_function_once)
+        
         candidate = MagicMock()
-        candidate.content = types.Content(
-            role="model",
-            parts=[types.Part(
-                function_call=types.FunctionCall(
-                    name=self.fc_name, 
-                    arguments="{}"
-                )
-            )]
-        )
-        candidate.finish_reason = "function_call"
+        
+        if should_call_function:
+            # Return function call on first call
+            response.text = f"I'll use {self.fc_name} to help you."
+            candidate.content = types.Content(
+                role="model",
+                parts=[types.Part(
+                    function_call=types.FunctionCall(
+                        name=self.fc_name,
+                        args={}  # Dict, not JSON string
+                    )
+                )]
+            )
+            candidate.finish_reason = "function_call"
+        else:
+            # Return text response on subsequent calls
+            import os
+            current_dir = os.getcwd()
+            response.text = f"I am currently working in: {current_dir}"
+            candidate.content = types.Content(
+                role="model",
+                parts=[types.Part(text=f"I am currently working in: {current_dir}")]
+            )
+            candidate.finish_reason = "stop"
         
         response.candidates = [candidate]
         return response
