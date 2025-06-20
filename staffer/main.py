@@ -10,9 +10,13 @@ def build_prompt(messages, working_directory=None):
     if working_directory is None:
         working_directory = os.getcwd()
     
-    return f"""You are a helpful AI coding agent working in: {working_directory}
+    return f"""You are a helpful AI coding agent.
 
-When a user asks a question or makes a request, make a function call plan. You can perform the following operations:
+CURRENT WORKING DIRECTORY: {working_directory}
+
+When asked about your location or "where you are", you should state that you are currently working in: {working_directory}
+
+You can perform the following operations:
 
 - List files and directories using get_files_info()
 - Read file contents using get_file_content(path)  
