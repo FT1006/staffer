@@ -76,6 +76,22 @@ You MUST call get_working_directory() immediately when asked to confirm your wor
     return messages
 
 
+def process_command(user_input, messages):
+    """Process special commands. Returns (handled, updated_messages)."""
+    if user_input.startswith('/'):
+        return handle_slash_command(user_input, messages)
+    return False, messages
+
+
+def handle_slash_command(command, messages):
+    """Handle slash commands. Returns (handled, updated_messages)."""
+    if command == '/reset':
+        print("Session cleared. Starting fresh in", os.getcwd())
+        return True, []  # Clear all messages
+    # Future commands like /session will be added here
+    return False, messages
+
+
 def main():
     """Main interactive mode entry point."""
     print("Interactive Mode - Staffer AI Assistant")
@@ -108,6 +124,14 @@ def main():
                 save_session(messages)
                 print("Goodbye!")
                 break
+            
+            # Check for special commands first
+            handled, messages = process_command(user_input, messages)
+            if handled:
+                # Save session after command
+                save_session(messages)
+                print()  # Add spacing
+                continue
                 
             # Process the command (working directory info now in system prompt)
             messages = process_prompt(user_input, messages=messages)

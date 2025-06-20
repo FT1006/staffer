@@ -110,3 +110,108 @@ def test_message_history_persistence():
                     second_messages = second_call.kwargs['messages']
                     assert len(second_messages) == 1, "Second call should receive history from first call"
                     assert second_messages == ['msg1']
+
+
+def test_reset_command_clears_history_unit():
+    """Unit test: /reset command clears conversation history in memory."""
+    from tests.conftest import FakeGeminiClient
+    from tests.factories import user, model
+    
+    with patch('staffer.cli.interactive.get_client') as mock_get_client:
+        fake_client = FakeGeminiClient()
+        mock_get_client.return_value = fake_client
+        
+        # Setup initial message history
+        initial_messages = [
+            user("what files are here?"),
+            model("I can see several files..."),
+            user("tell me about main.py"),
+            model("The main.py file contains...")
+        ]
+        
+        # Mock session loading to return history 
+        with patch('staffer.cli.interactive.load_session', return_value=initial_messages):
+            with patch('staffer.cli.interactive.save_session') as mock_save:
+                with patch('staffer.cli.interactive.process_prompt') as mock_process:
+                    from staffer.cli import interactive
+                    
+                    # User types /reset then exit
+                    with patch('builtins.input', side_effect=['/reset', 'exit']):
+                        interactive.main()
+                    
+                    # /reset should bypass LLM call
+                    mock_process.assert_not_called()
+                    
+                    # Should save an empty message list after reset
+                    mock_save.assert_called()
+                    final_messages = mock_save.call_args_list[-1][0][0]  # Last call's first argument
+                    
+                    # After reset, messages should be empty (just working directory context)
+                    assert len(final_messages) == 0 or all(
+                        "working directory" in str(msg).lower() for msg in final_messages
+                    ), "Reset should clear conversation history"
+
+
+def test_reset_command_clears_session_file(tmp_path):
+    """Integration test: /reset clears session file on disk."""
+    from tests.factories import user, model
+    from tests.conftest import FakeGeminiClient
+    
+    # Use temp directory for session storage
+    session_dir = tmp_path / ".staffer" 
+    session_file = session_dir / "current_session.json"
+    
+    with patch('staffer.session.get_session_file_path', return_value=session_file):
+        # Create initial session with some history
+        initial_messages = [
+            user("what files are here?"),
+            model("I can see several files..."),
+            user("tell me about main.py"),
+            model("The main.py file contains...")
+        ]
+        
+        # Save initial session to disk
+        from staffer.session import save_session
+        save_session(initial_messages)
+        
+        # Verify session was saved
+        from staffer.session import load_session
+        loaded_messages = load_session()
+        assert len(loaded_messages) == 4, "Initial session should have 4 messages"
+        
+        # Mock LLM client before importing interactive module
+        with patch('staffer.llm.get_client') as mock_get_client:
+            fake_client = FakeGeminiClient()
+            mock_get_client.return_value = fake_client
+            
+            from staffer.cli import interactive
+            
+            # User types /reset then exit
+            with patch('builtins.input', side_effect=['/reset', 'exit']):
+                interactive.main()
+        
+        # Verify session file is now empty/minimal after reset
+        final_messages = load_session() 
+        assert len(final_messages) == 0, "Session should be cleared after reset"
+
+
+def test_reset_command_shows_confirmation(capsys):
+    """Simple test: /reset shows user confirmation message."""
+    from tests.conftest import FakeGeminiClient
+    
+    # Mock LLM client before any imports
+    with patch('staffer.llm.get_client') as mock_get_client:
+        fake_client = FakeGeminiClient()
+        mock_get_client.return_value = fake_client
+        
+        from staffer.cli import interactive
+        
+        with patch('staffer.cli.interactive.load_session', return_value=[]):
+            with patch('staffer.cli.interactive.save_session'):
+                with patch('builtins.input', side_effect=['/reset', 'exit']):
+                    interactive.main()
+    
+    # Check printed output includes reset confirmation  
+    captured = capsys.readouterr()
+    assert "session cleared" in captured.out.lower() or "starting fresh" in captured.out.lower(), \
+        "User should see reset confirmation"
