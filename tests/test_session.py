@@ -1,6 +1,8 @@
 """Tests for session persistence functionality."""
 
+import json
 import os
+import sys
 import tempfile
 import shutil
 from unittest.mock import patch, MagicMock
@@ -19,7 +21,7 @@ def test_session_persistence():
             # Create some test messages using Google AI types
             test_messages = [
                 types.Content(role="user", parts=[types.Part(text="hello")]),
-                types.Content(role="assistant", parts=[types.Part(text="Hi there!")])
+                types.Content(role="model", parts=[types.Part(text="Hi there!")])
             ]
             
             # Save messages
@@ -32,7 +34,7 @@ def test_session_persistence():
             assert len(loaded_messages) == 2
             assert loaded_messages[0].role == "user"
             assert loaded_messages[0].parts[0].text == "hello"
-            assert loaded_messages[1].role == "assistant"
+            assert loaded_messages[1].role == "model"
             assert loaded_messages[1].parts[0].text == "Hi there!"
 
 
@@ -65,3 +67,274 @@ def test_save_session_creates_directory():
             assert len(loaded_messages) == 1
             assert loaded_messages[0].role == "user"
             assert loaded_messages[0].parts[0].text == "test"
+
+
+def test_session_with_function_calls():
+    """Sessions should handle function call and response messages."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        session_file = os.path.join(temp_dir, "current_session.json")
+        
+        with patch('staffer.session.get_session_file_path', return_value=session_file):
+            # Create messages including a tool message with function response
+            test_messages = [
+                types.Content(role="user", parts=[types.Part(text="list files")]),
+                types.Content(role="model", parts=[types.Part(text="I'll list the files for you.")]),
+                types.Content(
+                    role="tool",
+                    parts=[types.Part(function_response=types.FunctionResponse(
+                        name="get_files_info",
+                        response={"result": "file1.txt, file2.py"}
+                    ))]
+                ),
+                types.Content(role="model", parts=[types.Part(text="Here are the files: file1.txt, file2.py")])
+            ]
+            
+            # Save and load the session
+            save_session(test_messages)
+            loaded_messages = load_session()
+            
+            # Should preserve the essential conversation flow
+            assert len(loaded_messages) >= 3  # User request, model responses, function context
+            assert loaded_messages[0].role == "user"
+            assert loaded_messages[0].parts[0].text == "list files"
+            
+            # Function call context should be preserved somehow
+            has_function_context = any("get_files_info" in msg.parts[0].text for msg in loaded_messages if msg.parts[0].text)
+            assert has_function_context, "Function call context should be preserved"
+
+
+def test_corrupted_session_recovery():
+    """Should gracefully handle corrupted session files with mixed data types."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        session_file = os.path.join(temp_dir, "current_session.json")
+        
+        with patch('staffer.session.get_session_file_path', return_value=session_file):
+            # Create a corrupted session file with mixed data types (like from our bug)
+            corrupted_data = [
+                "msg1",  # Invalid string
+                "msg2",  # Invalid string  
+                {"role": "user", "text": "hello"},  # Valid message
+                {"role": "invalid", "text": "bad role"},  # Invalid role
+                {"invalid": "structure"},  # Invalid structure
+                {"role": "model", "text": "response"}  # Valid message
+            ]
+            
+            # Write corrupted data directly
+            with open(session_file, 'w') as f:
+                json.dump(corrupted_data, f)
+            
+            # Should load gracefully, filtering out invalid entries
+            loaded_messages = load_session()
+            
+            # Should only contain valid messages
+            assert len(loaded_messages) == 2
+            assert loaded_messages[0].role == "user"
+            assert loaded_messages[0].parts[0].text == "hello"
+            assert loaded_messages[1].role == "model"
+            assert loaded_messages[1].parts[0].text == "response"
+
+
+def test_function_response_preservation():
+    """Function call results should be preserved across sessions for context."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        session_file = os.path.join(temp_dir, "current_session.json")
+        
+        with patch('staffer.session.get_session_file_path', return_value=session_file):
+            # Session with function call that lists files
+            test_messages = [
+                types.Content(role="user", parts=[types.Part(text="what files are here?")]),
+                types.Content(role="model", parts=[types.Part(text="I'll check the files for you.")]),
+                types.Content(
+                    role="tool", 
+                    parts=[types.Part(function_response=types.FunctionResponse(
+                        name="get_files_info",
+                        response={"result": "important.txt, config.json"}
+                    ))]
+                ),
+                types.Content(role="model", parts=[types.Part(text="I found: important.txt, config.json")])
+            ]
+            
+            save_session(test_messages)
+            loaded_messages = load_session()
+            
+            # After loading, the AI should have context about what files exist
+            # This should be preserved in some form for follow-up questions
+            all_text = " ".join(msg.parts[0].text for msg in loaded_messages if msg.parts[0].text)
+            
+            # Should contain reference to the files that were found
+            assert "important.txt" in all_text or "config.json" in all_text, \
+                "Function call results should be preserved for context"
+
+
+def test_invalid_role_filtering():
+    """Invalid roles should be filtered out during deserialization."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        session_file = os.path.join(temp_dir, "current_session.json")
+        
+        with patch('staffer.session.get_session_file_path', return_value=session_file):
+            # Manually create session with invalid role
+            invalid_data = [
+                {"role": "user", "text": "hello"},
+                {"role": "assistant", "text": "should become model"},  # Invalid role for Google AI
+                {"role": "system", "text": "invalid role"},  # Invalid role
+                {"role": "model", "text": "valid response"}
+            ]
+            
+            with open(session_file, 'w') as f:
+                json.dump(invalid_data, f)
+            
+            loaded_messages = load_session()
+            
+            # Should only load messages with valid roles (user, model, tool)
+            valid_roles = {msg.role for msg in loaded_messages}
+            assert valid_roles.issubset({"user", "model", "tool"}), \
+                f"Found invalid roles: {valid_roles - {'user', 'model', 'tool'}}"
+
+
+def test_ai_remembers_file_listing_across_sessions():
+    """AI should remember file listings from tool calls across session restarts."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        session_file = os.path.join(temp_dir, "current_session.json")
+        
+        with patch('staffer.session.get_session_file_path', return_value=session_file):
+            # Simulate a session where user asks for file listing
+            test_messages = [
+                types.Content(role="user", parts=[types.Part(text="what files are here?")]),
+                types.Content(role="model", parts=[types.Part(text="I'll check the files for you.")]),
+                types.Content(
+                    role="tool",
+                    parts=[types.Part(function_response=types.FunctionResponse(
+                        name="get_files_info",
+                        response={"result": "data.csv\nreport.py\nanalysis.ipynb"}
+                    ))]
+                ),
+                types.Content(role="model", parts=[types.Part(text="I found: data.csv, report.py, analysis.ipynb")])
+            ]
+            
+            # Save session
+            save_session(test_messages)
+            
+            # Simulate session restart - load previous session
+            loaded_messages = load_session()
+            
+            # Convert back to text to check if file listing is preserved
+            all_text = " ".join(
+                msg.parts[0].text for msg in loaded_messages 
+                if msg.parts and msg.parts[0].text
+            )
+            
+            # AI should have access to the file listing information
+            assert "data.csv" in all_text, "File listing should be preserved across sessions"
+            assert "report.py" in all_text, "File listing should be preserved across sessions" 
+            assert "analysis.ipynb" in all_text, "File listing should be preserved across sessions"
+            
+            # Verify the tool context is meaningful for follow-up questions
+            # The AI should be able to answer "what files did I have?" from this context
+            has_file_context = any(
+                "data.csv" in (msg.parts[0].text or "") for msg in loaded_messages
+                if msg.parts and msg.parts[0].text
+            )
+            assert has_file_context, "Tool results should provide meaningful context for AI"
+
+
+def test_ai_can_answer_about_previous_file_listing():
+    """AI should be able to answer questions about previously seen file listings."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        session_file = os.path.join(temp_dir, "current_session.json")
+        
+        with patch('staffer.session.get_session_file_path', return_value=session_file):
+            # Create session with tool response containing detailed file info
+            initial_session = [
+                types.Content(role="user", parts=[types.Part(text="list the files here")]),
+                types.Content(role="model", parts=[types.Part(text="I'll list the files for you.")]),
+                types.Content(
+                    role="tool",
+                    parts=[types.Part(function_response=types.FunctionResponse(
+                        name="get_files_info", 
+                        response={"result": [
+                            {"name": "important_data.csv", "size": 1024},
+                            {"name": "analysis_script.py", "size": 2048}, 
+                            {"name": "results.txt", "size": 512}
+                        ]}
+                    ))]
+                ),
+                types.Content(role="model", parts=[types.Part(text="I found 3 files: important_data.csv (1024 bytes), analysis_script.py (2048 bytes), and results.txt (512 bytes).")])
+            ]
+            
+            save_session(initial_session)
+            
+            # Simulate restart - load session
+            loaded_messages = load_session()
+            
+            # Check that tool results are preserved in a meaningful way
+            # Current implementation converts tool responses to generic text
+            tool_messages = [msg for msg in loaded_messages if msg.role == "model"]
+            
+            # The AI should have specific file information available
+            found_specific_files = False
+            for msg in tool_messages:
+                if msg.parts and msg.parts[0].text:
+                    text = msg.parts[0].text
+                    if "important_data.csv" in text and "1024" in text:
+                        found_specific_files = True
+                        break
+            
+            assert found_specific_files, "Specific file details should be preserved for AI context"
+            
+            # Verify that function call context is preserved somehow
+            # Even if simplified, the AI should have access to the fact that get_files_info was called
+            has_function_context = any(
+                "get_files_info" in (msg.parts[0].text or "") for msg in loaded_messages
+                if msg.parts and msg.parts[0].text
+            )
+            assert has_function_context, "Function call context should be preserved"
+
+
+def test_function_response_becomes_visible_text_after_restore():
+    """Function responses should be converted to text the AI can actually see."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        session_file = os.path.join(temp_dir, "current_session.json")
+        
+        with patch('staffer.session.get_session_file_path', return_value=session_file):
+            # Save ONLY a tool response with NO model summary  
+            # This simulates the real scenario where we have raw function data
+            raw_tool_session = [
+                types.Content(role="user", parts=[types.Part(text="what files are here?")]),
+                types.Content(
+                    role="tool",
+                    parts=[types.Part(function_response=types.FunctionResponse(
+                        name="get_files_info",
+                        response={"result": ["project.py", "data.csv", "README.md", "config.json"]}
+                    ))]
+                )
+                # NOTE: No model message with file listing text - this is the key difference
+            ]
+            
+            save_session(raw_tool_session)
+            loaded_messages = load_session()
+            
+            # Test what the serialization/deserialization actually produces
+            # This tests the current transformation layer
+            ai_visible_text = []
+            for msg in loaded_messages:
+                if hasattr(msg, 'parts') and msg.parts:
+                    for part in msg.parts:
+                        if hasattr(part, 'text') and part.text:
+                            ai_visible_text.append(part.text)
+            
+            full_context = " ".join(ai_visible_text)
+            
+            # The AI should be able to see the actual file names, not just 
+            # "[Function get_files_info executed successfully]"
+            assert "project.py" in full_context, \
+                f"AI should see actual file names in context, got: '{full_context}'"
+            assert "data.csv" in full_context, \
+                f"AI should see actual file names in context, got: '{full_context}'"
+            assert "README.md" in full_context, \
+                f"AI should see actual file names in context, got: '{full_context}'"
+            assert "config.json" in full_context, \
+                f"AI should see actual file names in context, got: '{full_context}'"
+            
+            # Should not contain the old generic placeholder
+            assert "[Function get_files_info executed successfully]" not in full_context, \
+                "Should contain actual results, not generic placeholder"
