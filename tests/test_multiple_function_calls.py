@@ -1,11 +1,10 @@
 """Tests for handling multiple function calls in a single AI response."""
 
-import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from google.genai import types
 from staffer.main import process_prompt
-from tests.factories import user, model, tool_resp
+from tests.factories import tool_resp
 
 
 def test_multiple_function_calls_in_single_turn():

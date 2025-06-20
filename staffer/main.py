@@ -1,6 +1,5 @@
 import os
 import argparse
-import re
 from pathlib import Path
 from google.genai import types
 import sys
