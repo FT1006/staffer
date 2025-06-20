@@ -32,3 +32,12 @@ interactive_mode_roadmap.md
 codex-main/
 docs/
 codex/
+docs/directory-awareness-fix-handover.md
+quick-data-mcp-main/
+quick-data-mcp/
+quick-data-mcp/
+
+# Temporary files and directories
+.DS_Store
+HANDOVER_*.md
+excel-mcp-server/
