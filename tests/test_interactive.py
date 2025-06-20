@@ -179,10 +179,9 @@ def test_reset_command_clears_session_file(tmp_path):
         loaded_messages = load_session()
         assert len(loaded_messages) == 4, "Initial session should have 4 messages"
         
-        # Mock LLM client before importing interactive module
-        with patch('staffer.llm.get_client') as mock_get_client:
-            fake_client = FakeGeminiClient()
-            mock_get_client.return_value = fake_client
+        # Mock working directory initialization to avoid LLM calls
+        with patch('staffer.cli.interactive.initialize_session_with_working_directory') as mock_init:
+            mock_init.side_effect = lambda messages: messages  # Return messages unchanged
             
             from staffer.cli import interactive
             
@@ -199,10 +198,9 @@ def test_reset_command_shows_confirmation(capsys):
     """Simple test: /reset shows user confirmation message."""
     from tests.conftest import FakeGeminiClient
     
-    # Mock LLM client before any imports
-    with patch('staffer.llm.get_client') as mock_get_client:
-        fake_client = FakeGeminiClient()
-        mock_get_client.return_value = fake_client
+    # Mock working directory initialization to avoid LLM calls
+    with patch('staffer.cli.interactive.initialize_session_with_working_directory') as mock_init:
+        mock_init.side_effect = lambda messages: messages  # Return messages unchanged
         
         from staffer.cli import interactive
         
