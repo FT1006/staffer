@@ -52,21 +52,22 @@ def test_interactive_flag_detection():
         fake_client = FakeGeminiClient()
         mock_get_client.return_value = fake_client
         
-        # Test by invoking the main function directly with mocked args
-        from staffer.main import main
-        
-        with patch('sys.argv', ['staffer', '--interactive']):
-            with patch('builtins.input', side_effect=['exit']):
-                # Should not raise exceptions and should call interactive mode
+        # Mock the interactive main function to verify it gets called
+        with patch('staffer.cli.interactive.main') as mock_interactive_main:
+            # Test by invoking the main function directly with mocked args
+            from staffer.main import main
+            
+            with patch('sys.argv', ['staffer', '--interactive']):
+                # Should not raise exceptions and should route to interactive mode
                 try:
                     main()
                     returncode = 0
                 except SystemExit as e:
                     returncode = e.code if e.code is not None else 0
-                
-        # Verify it attempted to get a client (proving interactive mode was called)
-        mock_get_client.assert_called()
-        assert returncode == 0
+                    
+            # Verify interactive mode was actually called (this is what we're testing)
+            mock_interactive_main.assert_called_once()
+            assert returncode == 0
 
 
 def test_message_history_persistence():
