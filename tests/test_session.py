@@ -338,3 +338,54 @@ def test_function_response_becomes_visible_text_after_restore():
             # Should not contain the old generic placeholder
             assert "[Function get_files_info executed successfully]" not in full_context, \
                 "Should contain actual results, not generic placeholder"
+
+
+def test_working_directory_is_visible_after_restore():
+    """AI should know the working directory without having to ask or infer."""
+    # Mock Google AI modules to avoid dependency issues
+    with patch.dict(sys.modules, {
+        'google': MagicMock(),
+        'google.genai': MagicMock(),
+    }):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session_file = os.path.join(temp_dir, "current_session.json")
+            
+            with patch('staffer.session.get_session_file_path', return_value=session_file):
+                # Create a previous session (simulate user has been working)
+                previous_session = [
+                    types.Content(role="user", parts=[types.Part(text="hello")])
+                ]
+                save_session(previous_session)
+                
+                # Test: what happens when interactive mode loads this session 
+                # and processes a new prompt asking about working directory?
+                with patch('staffer.main.process_prompt') as mock_process:
+                    # Mock process_prompt to capture what messages it receives
+                    mock_process.return_value = []  # Return empty for simplicity
+                    
+                    from staffer.cli.interactive import main as interactive_main
+                    
+                    # Simulate user asking about working directory after session restore
+                    with patch('builtins.input', side_effect=['what directory am I in?', 'exit']):
+                        interactive_main()
+                    
+                    # Check what messages were passed to process_prompt
+                    assert mock_process.call_count == 1, "process_prompt should be called once"
+                    
+                    call_args = mock_process.call_args
+                    messages_sent_to_ai = call_args.kwargs.get('messages', [])
+                    
+                    # Extract text that AI can see
+                    ai_visible_text = []
+                    for msg in messages_sent_to_ai:
+                        if hasattr(msg, 'parts') and msg.parts:
+                            for part in msg.parts:
+                                if hasattr(part, 'text') and part.text:
+                                    ai_visible_text.append(part.text)
+                    
+                    full_context = " ".join(ai_visible_text)
+                    current_dir = os.getcwd()
+                    
+                    # The AI should see the working directory in the context
+                    assert current_dir in full_context, \
+                        f"AI should see working directory '{current_dir}' in context, got: '{full_context}'"
