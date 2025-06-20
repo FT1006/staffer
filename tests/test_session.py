@@ -345,7 +345,7 @@ def test_working_directory_is_visible_after_restore():
     # Use factory-based approach
     from tests.conftest import FakeGeminiClient
     
-    with patch('staffer.llm.get_client') as mock_get_client:
+    with patch('staffer.cli.interactive.get_client') as mock_get_client:
         fake_client = FakeGeminiClient()
         mock_get_client.return_value = fake_client
         
