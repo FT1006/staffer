@@ -389,3 +389,52 @@ def test_working_directory_is_visible_after_restore():
                     # The AI should see the working directory in the context
                     assert current_dir in full_context, \
                         f"AI should see working directory '{current_dir}' in context, got: '{full_context}'"
+
+
+def test_directory_change_removes_stale_context():
+    """When working directory changes, stale directory context should be pruned."""
+    from pathlib import Path
+    from staffer.main import prune_stale_dir_msgs
+    
+    # Simulate session from /Users/spaceship/project with AI claiming ignorance
+    old_cwd = Path("/Users/spaceship/project")
+    new_cwd = Path("/Users/spaceship/project/staffer")
+    
+    stale_messages = [
+        types.Content(role="user", parts=[types.Part(text="where are you at?")]),
+        types.Content(role="model", parts=[types.Part(text="I don't have access to the full path or any information beyond these items")]),
+        types.Content(role="user", parts=[types.Part(text="explore Logic")]),
+        types.Content(role="model", parts=[types.Part(text="I am unable to explore the Logic directory because I lack the functionality")]),
+        types.Content(role="model", parts=[types.Part(text=f"[Working directory: {old_cwd}] (captured 2025-06-20T10:00:00)")]),
+        types.Content(
+            role="tool",
+            parts=[types.Part(function_response=types.FunctionResponse(
+                name="get_files_info",
+                response={"result": f"{old_cwd}/Logic\n{old_cwd}/README.md"}
+            ))]
+        ),
+    ]
+    
+    # Test pruning when CWD changes to subdirectory
+    pruned = prune_stale_dir_msgs(stale_messages, new_cwd)
+    
+    # Verify stale directory context is removed
+    remaining_text = " ".join(
+        msg.parts[0].text for msg in pruned 
+        if msg.parts and msg.parts[0].text
+    )
+    
+    # Should NOT contain old directory path
+    assert str(old_cwd) not in remaining_text, \
+        f"Stale directory context should be removed, but found: {remaining_text}"
+    
+    # Tool responses from ancestor directories should be removed
+    tool_responses = [msg for msg in pruned if msg.role == "tool"]
+    for msg in tool_responses:
+        if msg.parts and hasattr(msg.parts[0], 'function_response'):
+            fc = msg.parts[0].function_response
+            if fc and fc.name == "get_files_info":
+                result = str(fc.response.get("result", ""))
+                # Should not start with ancestor path
+                assert not result.startswith(str(old_cwd)), \
+                    f"Tool response from ancestor directory should be removed: {result}"
