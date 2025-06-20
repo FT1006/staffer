@@ -7,7 +7,15 @@ import sys
 from .available_functions import get_available_functions, call_function
 from .llm import get_client
 
-def prune_stale_dir_msgs(msgs, cwd: Path):
+def _is_ancestor(path: Path, cwd: Path) -> bool:
+    """Check if path is an ancestor of cwd (parent, grandparent, etc)."""
+    try:
+        return path != cwd and cwd.is_relative_to(path)
+    except (ValueError, TypeError):
+        return False
+
+
+def prune_stale_dir_msgs(msgs, cwd: Path, max_messages=120):
     """Filter stale directory context with ancestor path detection. Returns new list, no mutation."""
     cwd_str = str(cwd)
     
@@ -25,31 +33,40 @@ def prune_stale_dir_msgs(msgs, cwd: Path):
         if m.role == "model" and m.parts:
             text = m.parts[0].text or ""
             
-            # Drop old cwd headers
+            # Drop old cwd headers that don't match current directory
             if "[Working directory:" in text and cwd_str not in text:
                 skip_message = True
                 
-            # Drop messages that reference ancestor paths but not current path
-            elif cwd_str not in text:
+            # Drop messages that specifically reference working IN ancestor paths
+            else:
                 for ancestor_path in ancestor_paths:
-                    if ancestor_path in text:
+                    # Only filter if it looks like a working directory reference
+                    if (cwd_str not in text and 
+                        (text.endswith(str(ancestor_path)) or 
+                         f"in {ancestor_path}" in text or
+                         f"Working in {ancestor_path}" in text or
+                         f"Files in {ancestor_path}" in text)):
                         skip_message = True
                         break
                 
-        # Enhanced tool response filtering
+        # Enhanced tool response filtering for ancestor directories
         elif m.role == "tool" and m.parts:
             fc = getattr(m.parts[0], "function_response", None)
             if fc and getattr(fc, "name", "") == "get_files_info":
                 result = str(getattr(fc, "response", {}).get("result", ""))
-                # Drop tool responses from ancestor directories
-                if not result.startswith(cwd_str):
-                    for ancestor_path in ancestor_paths:
-                        if ancestor_path in result:
-                            skip_message = True
-                            break
+                # Drop tool responses that start with ancestor paths but not current path
+                for ancestor_path in ancestor_paths:
+                    if result.startswith(ancestor_path) and not result.startswith(cwd_str):
+                        skip_message = True
+                        break
         
         if not skip_message:
             kept.append(m)
+    
+    # Hard limit on message count to prevent token overflow
+    if len(kept) > max_messages:
+        # Keep most recent messages to preserve context
+        kept = kept[-max_messages:]
     
     return kept
 
@@ -99,12 +116,14 @@ def process_prompt(prompt, verbose=False, messages=None):
     clean_messages = prune_stale_dir_msgs(messages, working_directory)
     system_prompt = build_prompt(clean_messages, working_directory)
 
-    # Add current user prompt to cleaned messages
+    # Add current user prompt
     current_message = types.Content(
         role="user",
         parts=[types.Part(text=prompt)]
     )
-    clean_messages.append(current_message)
+
+    # Build conversation for LLM (history + current prompt)
+    conversation_for_llm = clean_messages + [current_message]
 
     client = get_client()
     
@@ -112,7 +131,7 @@ def process_prompt(prompt, verbose=False, messages=None):
         function_called = False
         res = client.models.generate_content(
             model="gemini-2.0-flash-001",
-            contents=clean_messages,
+            contents=conversation_for_llm,
             config=types.GenerateContentConfig(
                 tools=[available_functions],
                 system_instruction=system_prompt
@@ -124,8 +143,8 @@ def process_prompt(prompt, verbose=False, messages=None):
 
         if res.candidates:
             for candidate in res.candidates:
-                # Add assistant response to cleaned message history
-                clean_messages.append(candidate.content)
+                # Add assistant response to conversation for LLM
+                conversation_for_llm.append(candidate.content)
                 for part in candidate.content.parts:
                     if part.function_call:
                         function_called = True
@@ -136,13 +155,14 @@ def process_prompt(prompt, verbose=False, messages=None):
                         if not function_call_result.parts[0].function_response.response:
                             sys.exit(1)
                         else:
-                            clean_messages.append(types.Content(
+                            tool_response = types.Content(
                                 role="tool",
                                 parts=[types.Part(function_response=types.FunctionResponse(
                                     name=part.function_call.name,
                                     response=function_call_result.parts[0].function_response.response
                                 ))]
-                            ))
+                            )
+                            conversation_for_llm.append(tool_response)
             if not function_called:
                 print(f"-> {res.text}")
                 break
@@ -152,7 +172,8 @@ def process_prompt(prompt, verbose=False, messages=None):
         print(f"Prompt tokens: {promptTokens}")
         print(f"Response tokens: {responseTokens}")
     
-    return clean_messages
+    # Return conversation_for_llm which now contains all the new responses
+    return conversation_for_llm
 
 
 def main():
