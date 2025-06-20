@@ -145,6 +145,9 @@ def process_prompt(prompt, verbose=False, messages=None):
             for candidate in res.candidates:
                 # Add assistant response to conversation for LLM
                 conversation_for_llm.append(candidate.content)
+                
+                # Collect all function responses for this turn
+                function_response_parts = []
                 for part in candidate.content.parts:
                     if part.function_call:
                         function_called = True
@@ -155,14 +158,20 @@ def process_prompt(prompt, verbose=False, messages=None):
                         if not function_call_result.parts[0].function_response.response:
                             sys.exit(1)
                         else:
-                            tool_response = types.Content(
-                                role="tool",
-                                parts=[types.Part(function_response=types.FunctionResponse(
+                            function_response_parts.append(
+                                types.Part(function_response=types.FunctionResponse(
                                     name=part.function_call.name,
                                     response=function_call_result.parts[0].function_response.response
-                                ))]
+                                ))
                             )
-                            conversation_for_llm.append(tool_response)
+                
+                # Add all function responses as a single tool message
+                if function_response_parts:
+                    tool_message = types.Content(
+                        role="tool",
+                        parts=function_response_parts
+                    )
+                    conversation_for_llm.append(tool_message)
             if not function_called:
                 print(f"-> {res.text}")
                 break
