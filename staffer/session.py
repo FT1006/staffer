@@ -2,6 +2,7 @@
 
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from google.genai import types
 
@@ -10,6 +11,16 @@ def get_session_file_path():
     """Get the path to the session file."""
     staffer_dir = Path.home() / ".staffer"
     return staffer_dir / "current_session.json"
+
+
+def create_working_directory_message():
+    """Create a system message with current working directory information."""
+    current_dir = os.getcwd()
+    timestamp = datetime.now().isoformat()
+    return types.Content(
+        role="model",  # Use model role since Google AI doesn't support system role
+        parts=[types.Part(text=f"[Working directory: {current_dir}] (captured {timestamp})")]
+    )
 
 
 def serialize_message(message):

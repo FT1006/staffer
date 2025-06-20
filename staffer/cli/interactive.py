@@ -1,7 +1,7 @@
 """Interactive mode for Staffer - continuous prompt loop."""
 
 from ..main import process_prompt
-from ..session import load_session, save_session
+from ..session import load_session, save_session, create_working_directory_message
 
 
 def main():
@@ -29,8 +29,9 @@ def main():
                 print("Goodbye!")
                 break
                 
-            # Process the command and update conversation history
-            messages = process_prompt(user_input, messages=messages)
+            # Add working directory context and process the command
+            messages_with_context = [create_working_directory_message()] + messages
+            messages = process_prompt(user_input, messages=messages_with_context)
             print()  # Add spacing between responses
             
         except (EOFError, KeyboardInterrupt):
