@@ -7,6 +7,7 @@ from ..main import process_prompt
 from ..session import load_session, save_session, create_working_directory_message
 from ..available_functions import get_available_functions, call_function
 from ..llm import get_client
+# TerminalUI will be added in slice 5
 
 
 def should_reinitialize_working_directory(messages, current_dir):
@@ -108,8 +109,6 @@ def main():
         print("Initializing working directory context...")
         messages = initialize_session_with_working_directory(messages)
         save_session(messages)
-    
-    print()
     
     while True:
         try:
