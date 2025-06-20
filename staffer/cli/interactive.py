@@ -29,9 +29,8 @@ def main():
                 print("Goodbye!")
                 break
                 
-            # Add working directory context and process the command
-            messages_with_context = [create_working_directory_message()] + messages
-            messages = process_prompt(user_input, messages=messages_with_context)
+            # Process the command (working directory info now in system prompt)
+            messages = process_prompt(user_input, messages=messages)
             print()  # Add spacing between responses
             
         except (EOFError, KeyboardInterrupt):
