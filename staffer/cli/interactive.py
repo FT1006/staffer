@@ -76,6 +76,55 @@ You MUST call get_working_directory() immediately when asked to confirm your wor
     return messages
 
 
+def process_command(user_input, messages):
+    """Process special commands. Returns (handled, updated_messages)."""
+    if not user_input.startswith('/'):
+        return False, messages
+    
+    command = user_input.lower()
+    
+    if command == '/reset':
+        print("Session cleared. Starting fresh in", os.getcwd())
+        save_session([])  # Save empty session
+        return True, []  # Clear all messages
+    
+    elif command == '/session':
+        show_session_info(messages)
+        return True, messages  # Don't modify messages
+    
+    elif command == '/help':
+        show_help()
+        return True, messages  # Don't modify messages
+    
+    else:
+        print(f"Unknown command: {user_input}")
+        print("Type /help for available commands")
+        return True, messages  # Don't modify messages
+
+
+def show_session_info(messages):
+    """Display current session information."""
+    current_dir = os.getcwd()
+    message_count = len(messages)
+    
+    print(f"Current Directory: {current_dir}")
+    print(f"Messages: {message_count}")
+    
+    # Basic token estimation (rough approximation)
+    total_chars = sum(len(str(msg)) for msg in messages if hasattr(msg, 'parts'))
+    estimated_tokens = total_chars // 4
+    print(f"Estimated tokens: {estimated_tokens}")
+
+
+def show_help():
+    """Display available commands."""
+    print("Available commands:")
+    print("  /reset    - Clear conversation history")
+    print("  /session  - Show session info")
+    print("  /help     - Show this help")
+    print("  exit      - Save session and quit")
+
+
 def main():
     """Main interactive mode entry point."""
     print("Interactive Mode - Staffer AI Assistant")
@@ -108,6 +157,11 @@ def main():
                 save_session(messages)
                 print("Goodbye!")
                 break
+            
+            # Check for special commands first
+            handled, messages = process_command(user_input, messages)
+            if handled:
+                continue
                 
             # Process the command (working directory info now in system prompt)
             messages = process_prompt(user_input, messages=messages)
