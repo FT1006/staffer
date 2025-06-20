@@ -24,7 +24,7 @@ def call_function(function_call_part, working_directory, verbose=False):
     else:
         print(f" - Calling function: {function_call_part.name}")
 
-    args = function_call_part.args
+    args = function_call_part.args or {}
     function_name = function_call_part.name.lower()
 
     function_dict = {

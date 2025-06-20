@@ -1,15 +1,28 @@
 import os
 import argparse
-from dotenv import load_dotenv
-from google import genai
 from google.genai import types
 import sys
 from .available_functions import get_available_functions, call_function
+from .llm import get_client
 
-load_dotenv()
-api_key = os.environ.get("GEMINI_API_KEY")
+def build_prompt(messages, working_directory=None):
+    """Build system prompt with working directory and function info."""
+    if working_directory is None:
+        working_directory = os.getcwd()
+    
+    return f"""You are a helpful AI coding agent working in: {working_directory}
 
-client = genai.Client(api_key=api_key)
+When a user asks a question or makes a request, make a function call plan. You can perform the following operations:
+
+- List files and directories using get_files_info()
+- Read file contents using get_file_content(path)  
+- Execute Python files using run_python_file(path, args)
+- Write or overwrite files using write_file(path, content)
+
+All paths you provide should be relative to the working directory: {working_directory}
+
+You have access to these functions - use them confidently to explore directories, read files, and accomplish tasks."""
+
 
 def process_prompt(prompt, verbose=False, messages=None):
     """Process a single prompt using the AI agent."""
@@ -22,18 +35,7 @@ def process_prompt(prompt, verbose=False, messages=None):
         print(f"Working directory: {working_directory}")
         print(f"User prompt: {prompt}")
 
-    system_prompt = """
-You are a helpful AI coding agent.
-
-When a user asks a question or makes a request, make a function call plan. You can perform the following operations:
-
-- List files and directories
-- Read file contents
-- Execute Python files with optional arguments
-- Write or overwrite files
-
-All paths you provide should be relative to the working directory. You do not need to specify the working directory in your function calls as it is automatically injected for security reasons.
-"""
+    system_prompt = build_prompt(messages, working_directory)
 
     # Add current user prompt to existing messages
     current_message = types.Content(
@@ -42,6 +44,8 @@ All paths you provide should be relative to the working directory. You do not ne
     )
     messages.append(current_message)
 
+    client = get_client()
+    
     for i in range(20):
         function_called = False
         res = client.models.generate_content(
