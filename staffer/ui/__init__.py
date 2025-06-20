@@ -1,0 +1,1 @@
+"""UI module for Staffer enhanced terminal experience."""
