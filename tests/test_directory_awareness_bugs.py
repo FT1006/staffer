@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from tests.factories import user, model, tool_resp
 from tests.conftest import pushd, assert_cwd_in_prompt
 from staffer.session import save_session, load_session
@@ -71,7 +71,10 @@ def test_get_files_info_called_after_session_restore(tmp_path, fake_llm):
         
         # Test: simulate asking AI to explore directory after session restore
         with pushd(tmp_path):
-            # Spy on actual function calls
+            # Configure the fake LLM to call functions multiple times (not just once)
+            fake_llm.gemini.call_function_once = False
+            
+            # Spy on actual function calls - this is what we really want to test
             called = {}
             def spy_get_files_info(path="."):
                 called["get_files_info"] = True
@@ -80,7 +83,8 @@ def test_get_files_info_called_after_session_restore(tmp_path, fake_llm):
             with patch("staffer.available_functions.get_files_info", spy_get_files_info):
                 from staffer.cli.interactive import main as interactive_main
                 
-                # Simulate user asking to explore (reproduces the "Logic" directory bug)
+                # The fake_llm fixture will handle the AI responses and trigger function calls
+                # We just need to simulate user input
                 with patch("builtins.input", side_effect=["explore current directory", "exit"]):
                     interactive_main()
             
