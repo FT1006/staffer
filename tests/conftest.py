@@ -88,6 +88,18 @@ class FakeGeminiClient:
         self.gemini = FakeGemini(fc_name, fc_response)
         self.models = FakeGeminiModels(self.gemini)
 
+    @property
+    def call_count(self):
+        """Delegate to internal gemini instance."""
+        return self.gemini.call_count
+
+    @property
+    def last_system_instruction(self):
+        """Get the system instruction from the last request."""
+        if self.gemini.last_request and self.gemini.last_request['config']:
+            return getattr(self.gemini.last_request['config'], 'system_instruction', '')
+        return ''
+
 
 @contextlib.contextmanager
 def pushd(path):
