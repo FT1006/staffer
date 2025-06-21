@@ -113,36 +113,92 @@ def deserialize_message(data):
 
 def save_session(messages):
     """Save messages to the session file."""
-    session_file = get_session_file_path()
-    session_path = Path(session_file)
+    # Use the new metadata-aware function
+    save_session_with_metadata(messages)
+
+
+def save_session_with_metadata(messages, metadata=None, session_path=None):
+    """Save messages and metadata to the session file.
+    
+    Args:
+        messages: List of message objects to save
+        metadata: Optional dict with additional metadata (e.g., {"cwd": "/path"})
+        session_path: Optional path to save to (for testing)
+    """
+    if session_path is None:
+        session_path = get_session_file_path()
+    else:
+        session_path = Path(session_path)
     
     # Create directory if it doesn't exist
     session_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Serialize messages before saving, filter out None values (like tool messages)
+    # Prepare metadata with defaults
+    if metadata is None:
+        metadata = {}
+    
+    # Always add current working directory and timestamp
+    metadata["cwd"] = os.getcwd()
+    metadata["created"] = datetime.now().isoformat()
+    
+    # Serialize messages before saving, filter out None values
     serialized_messages = [serialize_message(msg) for msg in messages]
     filtered_messages = [msg for msg in serialized_messages if msg is not None]
     
-    # Save messages as JSON
+    # Save as new format with metadata
+    session_data = {
+        "messages": filtered_messages,
+        "metadata": metadata
+    }
+    
     with open(session_path, 'w') as f:
-        json.dump(filtered_messages, f, indent=2)
+        json.dump(session_data, f, indent=2)
+
+
+def load_session_with_metadata(session_path=None):
+    """Load messages and metadata from the session file.
+    
+    Args:
+        session_path: Optional path to load from (for testing)
+        
+    Returns:
+        tuple: (messages, metadata) where metadata is a dict
+    """
+    if session_path is None:
+        session_path = get_session_file_path()
+    else:
+        session_path = Path(session_path)
+    
+    # Return empty if file doesn't exist
+    if not session_path.exists():
+        return [], {}
+    
+    try:
+        with open(session_path, 'r') as f:
+            data = json.load(f)
+            
+        # Handle backward compatibility with old format
+        if isinstance(data, list):
+            # Old format: just array of messages
+            messages = data
+            metadata = {}
+        else:
+            # New format: dict with messages and metadata
+            messages = data.get("messages", [])
+            metadata = data.get("metadata", {})
+        
+        # Deserialize messages after loading, filter out None values
+        deserialized = [deserialize_message(msg) for msg in messages]
+        filtered_messages = [msg for msg in deserialized if msg is not None]
+        
+        return filtered_messages, metadata
+    except (json.JSONDecodeError, IOError):
+        # If file is corrupted, return empty
+        return [], {}
 
 
 def load_session():
     """Load messages from the session file."""
-    session_file = get_session_file_path()
-    session_path = Path(session_file)
-    
-    # Return empty list if file doesn't exist
-    if not session_path.exists():
-        return []
-    
-    try:
-        with open(session_path, 'r') as f:
-            serialized_messages = json.load(f)
-            # Deserialize messages after loading, filter out None values
-            deserialized = [deserialize_message(msg) for msg in serialized_messages]
-            return [msg for msg in deserialized if msg is not None]
-    except (json.JSONDecodeError, IOError):
-        # If file is corrupted, return empty list
-        return []
+    # Use the new metadata-aware function but only return messages
+    messages, _ = load_session_with_metadata()
+    return messages
