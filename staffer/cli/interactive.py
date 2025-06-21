@@ -7,6 +7,7 @@ from ..main import process_prompt
 from ..session import load_session, save_session, create_working_directory_message, load_session_with_metadata, save_session_with_metadata
 from ..available_functions import get_available_functions, call_function
 from ..llm import get_client
+from ..ui.terminal import get_terminal_ui
 
 
 def check_directory_change(metadata):
