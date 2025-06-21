@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 from typing import Dict, Any, Optional
+from contextlib import nullcontext
 
 try:
     from prompt_toolkit import prompt
@@ -144,7 +145,8 @@ class BasicTerminalUI:
     def show_spinner(self, message: str):
         """Basic processing indicator."""
         print(f"⚡ {message}")
-        return None
+        # Return a no-op context manager for compatibility
+        return nullcontext()
     
     def display_code(self, code: str, language: str = "python"):
         """Display code without highlighting."""
