@@ -146,10 +146,10 @@ def show_help():
 
 def main():
     """Main interactive mode entry point."""
-    print("Interactive Mode - Staffer AI Assistant")
+    print("Interactive Mode - Staffer AI Assistant (Slice 4 - Directory Detection)")
     print("Type 'exit' or 'quit' to end the session")
     
-    # Load previous session with metadata
+    # Load previous session with metadata 
     messages, metadata = load_session_with_metadata()
     
     # Check for directory change
