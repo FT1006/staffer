@@ -35,8 +35,71 @@ class TestTerminalUI:
         ui.display_ai_response("Test response")
         ui.display_code("print('hello')", "python")
         
-        # Test show_spinner returns None for basic UI
-        assert ui.show_spinner("Loading...") is None
+        # Test show_spinner returns a context manager
+        spinner = ui.show_spinner("Loading...")
+        assert spinner is not None
+        # Test it works as context manager
+        with spinner:
+            pass  # Should not raise
+    
+    def test_enhanced_terminal_ui_prompt_building(self):
+        """Test enhanced terminal prompt building with path shortening."""
+        # This test will only run if dependencies are available
+        try:
+            ui = TerminalUI()
+        except ImportError:
+            pytest.skip("Enhanced terminal dependencies not available")
+        
+        # Test home directory shortening
+        from pathlib import Path
+        home = str(Path.home())
+        
+        session_info = {
+            'cwd': home + '/projects/myapp',
+            'message_count': 10
+        }
+        prompt = ui._build_prompt(session_info)
+        assert '~/projects/myapp' in prompt
+        assert '[10 msgs]' in prompt
+        
+        # Test high message count warning
+        session_info['message_count'] = 50
+        prompt = ui._build_prompt(session_info)
+        assert '⚠️' in prompt
+        
+        # Test path shortening for deep paths
+        session_info['cwd'] = '/very/long/path/to/some/deep/directory'
+        prompt = ui._build_prompt(session_info)
+        assert 'deep/directory' in prompt
+    
+    def test_enhanced_terminal_ai_response_parsing(self):
+        """Test AI response parsing with code block detection."""
+        try:
+            ui = TerminalUI()
+        except ImportError:
+            pytest.skip("Enhanced terminal dependencies not available")
+        
+        # Mock the console to capture output
+        with patch.object(ui, 'console') as mock_console, \
+             patch.object(ui, 'display_code') as mock_display_code:
+            
+            # Test response with code block
+            response = """Here's a Python function:
+
+```python
+def hello():
+    print("Hello, World!")
+```
+
+That's the code!"""
+            
+            ui.display_ai_response(response)
+            
+            # Verify code was displayed with syntax highlighting
+            mock_display_code.assert_called_once_with(
+                'def hello():\n    print("Hello, World!")',
+                'python'
+            )
 
 
 class TestTerminalUIIntegration:
@@ -89,3 +152,37 @@ class TestTerminalUIIntegration:
         
         # Verify AI response was displayed through terminal
         mock_terminal.display_ai_response.assert_called()
+    
+    def test_terminal_graceful_fallback(self):
+        """Test that terminal falls back gracefully when enhanced mode fails."""
+        # Force enhanced mode to be available but fail on instantiation
+        with patch('staffer.ui.terminal.ENHANCED_MODE_AVAILABLE', True), \
+             patch('staffer.ui.terminal.TerminalUI', side_effect=Exception("Failed")):
+            
+            ui = get_terminal_ui()
+            assert isinstance(ui, BasicTerminalUI)
+    
+    def test_spinner_context_manager(self):
+        """Test spinner works as context manager in basic mode."""
+        ui = BasicTerminalUI()
+        
+        # Basic UI spinner returns None, so context manager should be no-op
+        with ui.show_spinner("Processing...") as spinner:
+            assert spinner is None
+    
+    def test_terminal_ui_with_empty_session(self, fake_llm, temp_cwd):
+        """Test terminal UI handles empty session correctly."""
+        mock_terminal = Mock(spec=BasicTerminalUI)
+        mock_terminal.get_input.side_effect = ['exit']
+        mock_terminal.show_spinner.return_value = MagicMock(__enter__=Mock(), __exit__=Mock())
+        
+        with patch('staffer.cli.interactive.get_terminal_ui', return_value=mock_terminal), \
+             patch('staffer.cli.interactive.load_session', return_value=[]), \
+             patch('staffer.cli.interactive.save_session'):
+            
+            from staffer.cli.interactive import main
+            main()
+        
+        # Should not show "restored conversation" message for empty session
+        success_calls = [call[0][0] for call in mock_terminal.display_success.call_args_list]
+        assert not any("Restored conversation" in call for call in success_calls)
