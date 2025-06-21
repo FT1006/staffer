@@ -146,8 +146,11 @@ def show_help():
 
 def main():
     """Main interactive mode entry point."""
-    print("Interactive Mode - Staffer AI Assistant (Slice 4 - Directory Detection)")
-    print("Type 'exit' or 'quit' to end the session")
+    # Get terminal UI (enhanced or basic) - Slice 5 feature
+    terminal = get_terminal_ui()
+    terminal.display_welcome()
+    terminal.display_success("Slice 4 - Directory Detection enabled")
+    terminal.display_success("Type 'exit' or 'quit' to end the session")
     
     # Load previous session with metadata 
     messages, metadata = load_session_with_metadata()
@@ -166,29 +169,34 @@ def main():
             print(f"Keeping session from {old_dir}")
     
     if messages:
-        print(f"Restored conversation with {len(messages)} previous messages")
+        terminal.display_success(f"Restored conversation with {len(messages)} previous messages")
     
     # Force working directory initialization
     current_dir = Path(os.getcwd())
     if should_reinitialize_working_directory(messages, current_dir):
-        print("Initializing working directory context...")
-        messages = initialize_session_with_working_directory(messages)
-        save_session_with_metadata(messages)
+        with terminal.show_spinner("Initializing working directory context..."):
+            messages = initialize_session_with_working_directory(messages)
+            save_session_with_metadata(messages)  # Keep metadata saving for directory detection
     
     print()
     
     while True:
         try:
-            print("staffer> ", end="", flush=True)
-            user_input = input().strip()
+            # Build session info for rich prompt - Slice 5 feature
+            session_info = {
+                'cwd': str(current_dir),
+                'message_count': len(messages)
+            }
+            user_input = terminal.get_input(session_info).strip()
             
             if not user_input:
                 continue
                 
             if user_input.lower() in ['exit', 'quit']:
-                # Save session with metadata before exiting
+                # Save session with metadata before exiting - Slice 4 feature
                 save_session_with_metadata(messages)
-                print("Goodbye!")
+                terminal.display_success("Session saved")
+                terminal.display_success("Goodbye!")
                 break
             
             # Check for special commands first
@@ -196,15 +204,17 @@ def main():
             if handled:
                 continue
                 
-            # Process the command (working directory info now in system prompt)
-            messages = process_prompt(user_input, messages=messages)
+            # Process the command with terminal feedback - Slice 5 feature
+            with terminal.show_spinner("AI is thinking..."):
+                messages = process_prompt(user_input, messages=messages, terminal=terminal)
             print()  # Add spacing between responses
             
         except (EOFError, KeyboardInterrupt):
-            # Save session before exiting on Ctrl+C
+            # Save session before exiting on Ctrl+C - Slice 4 feature
             save_session_with_metadata(messages)
+            terminal.display_success("Session saved")
             print("\nGoodbye!")
             break
         except Exception as e:
-            print(f"Error: {e}")
+            terminal.display_error(f"Error: {e}")
             continue
