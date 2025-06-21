@@ -7,6 +7,7 @@ from ..main import process_prompt
 from ..session import load_session, save_session, create_working_directory_message
 from ..available_functions import get_available_functions, call_function
 from ..llm import get_client
+from ..ui.terminal import get_terminal_ui
 
 
 def should_reinitialize_working_directory(messages, current_dir):
@@ -78,27 +79,33 @@ You MUST call get_working_directory() immediately when asked to confirm your wor
 
 def main():
     """Main interactive mode entry point."""
-    print("Interactive Mode - Staffer AI Assistant")
-    print("Type 'exit' or 'quit' to end the session")
+    # Get terminal UI (enhanced or basic)
+    terminal = get_terminal_ui()
+    terminal.display_welcome()
+    terminal.display_success("Type 'exit' or 'quit' to end the session")
     
     # Load previous session if it exists
     messages = load_session()
     if messages:
-        print(f"Restored conversation with {len(messages)} previous messages")
+        terminal.display_success(f"Restored conversation with {len(messages)} previous messages")
     
     # Force working directory initialization
     current_dir = Path(os.getcwd())
     if should_reinitialize_working_directory(messages, current_dir):
-        print("Initializing working directory context...")
-        messages = initialize_session_with_working_directory(messages)
-        save_session(messages)
+        with terminal.show_spinner("Initializing working directory context..."):
+            messages = initialize_session_with_working_directory(messages)
+            save_session(messages)
     
-    print()
+    print()  # Spacing
     
     while True:
         try:
-            print("staffer> ", end="", flush=True)
-            user_input = input().strip()
+            # Build session info for rich prompt
+            session_info = {
+                'cwd': str(current_dir),
+                'message_count': len(messages)
+            }
+            user_input = terminal.get_input(session_info).strip()
             
             if not user_input:
                 continue
@@ -106,18 +113,21 @@ def main():
             if user_input.lower() in ['exit', 'quit']:
                 # Save session before exiting
                 save_session(messages)
-                print("Goodbye!")
+                terminal.display_success("Session saved")
+                terminal.display_success("Goodbye!")
                 break
                 
-            # Process the command (working directory info now in system prompt)
-            messages = process_prompt(user_input, messages=messages)
+            # Process the command with terminal feedback
+            with terminal.show_spinner("AI is thinking..."):
+                messages = process_prompt(user_input, messages=messages, terminal=terminal)
             print()  # Add spacing between responses
             
         except (EOFError, KeyboardInterrupt):
             # Save session before exiting on Ctrl+C
             save_session(messages)
+            terminal.display_success("Session saved")
             print("\nGoodbye!")
             break
         except Exception as e:
-            print(f"Error: {e}")
+            terminal.display_error(f"Error: {e}")
             continue

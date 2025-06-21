@@ -100,7 +100,7 @@ All paths you provide should be relative to the working directory: {working_dire
 You have access to these functions - use them confidently to explore directories, read files, and accomplish tasks."""
 
 
-def process_prompt(prompt, verbose=False, messages=None):
+def process_prompt(prompt, verbose=False, messages=None, terminal=None):
     """Process a single prompt using the AI agent."""
     if messages is None:
         messages = []
@@ -150,6 +150,9 @@ def process_prompt(prompt, verbose=False, messages=None):
                 for part in candidate.content.parts:
                     if part.function_call:
                         function_called = True
+                        # Display function call indicator if terminal provided
+                        if terminal:
+                            terminal.display_function_call(part.function_call.name)
                         if verbose:
                             function_call_result = call_function(part.function_call, working_directory, verbose=True)
                         else:
@@ -172,7 +175,10 @@ def process_prompt(prompt, verbose=False, messages=None):
                     )
                     conversation_for_llm.append(tool_message)
             if not function_called:
-                print(f"-> {res.text}")
+                if terminal:
+                    terminal.display_ai_response(res.text)
+                else:
+                    print(f"-> {res.text}")
                 break
         i+=1
 
