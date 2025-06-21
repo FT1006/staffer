@@ -4,9 +4,28 @@ import os
 from pathlib import Path
 from google.genai import types
 from ..main import process_prompt
-from ..session import load_session, save_session, create_working_directory_message
+from ..session import load_session, save_session, create_working_directory_message, load_session_with_metadata, save_session_with_metadata
 from ..available_functions import get_available_functions, call_function
 from ..llm import get_client
+
+
+def check_directory_change(metadata):
+    """Check if cwd has changed since session creation."""
+    current_cwd = os.getcwd()
+    session_cwd = metadata.get('cwd')
+    
+    # If no cwd in metadata, no change to detect
+    if not session_cwd:
+        return False
+        
+    return current_cwd != session_cwd
+
+
+def prompt_directory_change(old_dir, new_dir):
+    """Prompt user about directory change."""
+    print(f"Directory changed from {old_dir} to {new_dir}")
+    choice = input("[N] Start new session  [K] Keep old session\nChoice (N/k): ")
+    return choice.lower() not in ['k']
 
 
 def should_reinitialize_working_directory(messages, current_dir):
@@ -85,7 +104,7 @@ def process_command(user_input, messages):
     
     if command == '/reset':
         print("Session cleared. Starting fresh in", os.getcwd())
-        save_session([])  # Save empty session
+        save_session_with_metadata([])  # Save empty session
         return True, []  # Clear all messages
     
     elif command == '/session':
@@ -130,8 +149,22 @@ def main():
     print("Interactive Mode - Staffer AI Assistant")
     print("Type 'exit' or 'quit' to end the session")
     
-    # Load previous session if it exists
-    messages = load_session()
+    # Load previous session with metadata
+    messages, metadata = load_session_with_metadata()
+    
+    # Check for directory change
+    if messages and check_directory_change(metadata):
+        old_dir = metadata.get('cwd', 'unknown')
+        new_dir = os.getcwd()
+        
+        if prompt_directory_change(old_dir, new_dir):
+            # User wants new session
+            messages = []
+            print("Starting new session...")
+        else:
+            # User wants to keep old session
+            print(f"Keeping session from {old_dir}")
+    
     if messages:
         print(f"Restored conversation with {len(messages)} previous messages")
     
@@ -140,7 +173,7 @@ def main():
     if should_reinitialize_working_directory(messages, current_dir):
         print("Initializing working directory context...")
         messages = initialize_session_with_working_directory(messages)
-        save_session(messages)
+        save_session_with_metadata(messages)
     
     print()
     
@@ -153,8 +186,8 @@ def main():
                 continue
                 
             if user_input.lower() in ['exit', 'quit']:
-                # Save session before exiting
-                save_session(messages)
+                # Save session with metadata before exiting
+                save_session_with_metadata(messages)
                 print("Goodbye!")
                 break
             
@@ -169,7 +202,7 @@ def main():
             
         except (EOFError, KeyboardInterrupt):
             # Save session before exiting on Ctrl+C
-            save_session(messages)
+            save_session_with_metadata(messages)
             print("\nGoodbye!")
             break
         except Exception as e:

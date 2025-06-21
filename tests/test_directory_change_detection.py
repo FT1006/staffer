@@ -3,11 +3,12 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 import pytest
 
 from staffer.session import save_session_with_metadata, load_session_with_metadata
+from staffer.cli.interactive import check_directory_change, prompt_directory_change
 
 
 class TestSessionMetadata:
@@ -107,3 +108,61 @@ class TestSessionMetadata:
                 data = json.load(f)
             
             assert data["metadata"]["cwd"] == "/test/dir"
+
+
+class TestDirectoryChangeDetection:
+    """Test directory change detection in interactive mode."""
+    
+    def test_directory_change_prompts_user_on_session_restore(self):
+        """Test that user is prompted when directory has changed."""
+        # Mock input to simulate user choosing 'new session'
+        with patch('builtins.input', return_value='n'):
+            result = prompt_directory_change("/old/path", "/new/path")
+            assert result is True  # User wants new session
+        
+        # Mock input to simulate user choosing 'keep session'
+        with patch('builtins.input', return_value='k'):
+            result = prompt_directory_change("/old/path", "/new/path")
+            assert result is False  # User wants to keep old session
+    
+    def test_check_directory_change_detects_changes(self):
+        """Test that directory changes are properly detected."""
+        # Test when directories are different
+        metadata = {"cwd": "/old/directory"}
+        with patch('os.getcwd', return_value="/new/directory"):
+            assert check_directory_change(metadata) is True
+        
+        # Test when directories are the same
+        metadata = {"cwd": "/same/directory"}
+        with patch('os.getcwd', return_value="/same/directory"):
+            assert check_directory_change(metadata) is False
+        
+        # Test with missing cwd in metadata
+        metadata = {}
+        with patch('os.getcwd', return_value="/any/directory"):
+            assert check_directory_change(metadata) is False  # No cwd to compare
+    
+    def test_prompt_directory_change_default_is_new_session(self):
+        """Test that empty input defaults to new session."""
+        with patch('builtins.input', return_value=''):  # Just pressing Enter
+            result = prompt_directory_change("/old", "/new")
+            assert result is True  # Default is new session
+    
+    def test_prompt_directory_change_case_insensitive(self):
+        """Test that prompt accepts uppercase and lowercase inputs."""
+        # Test uppercase N
+        with patch('builtins.input', return_value='N'):
+            assert prompt_directory_change("/old", "/new") is True
+        
+        # Test uppercase K
+        with patch('builtins.input', return_value='K'):
+            assert prompt_directory_change("/old", "/new") is False
+    
+    @patch('builtins.print')
+    def test_prompt_shows_directory_info(self, mock_print):
+        """Test that prompt displays the directory change information."""
+        with patch('builtins.input', return_value='n'):
+            prompt_directory_change("/home/user/project-a", "/home/user/project-b")
+            
+        # Verify the directory change message was printed
+        mock_print.assert_any_call("Directory changed from /home/user/project-a to /home/user/project-b")

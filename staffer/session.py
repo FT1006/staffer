@@ -127,8 +127,9 @@ def save_session_with_metadata(messages, metadata=None, session_path=None):
     """
     if session_path is None:
         session_path = get_session_file_path()
-    else:
-        session_path = Path(session_path)
+    
+    # Always convert to Path object
+    session_path = Path(session_path)
     
     # Create directory if it doesn't exist
     session_path.parent.mkdir(parents=True, exist_ok=True)
@@ -166,8 +167,9 @@ def load_session_with_metadata(session_path=None):
     """
     if session_path is None:
         session_path = get_session_file_path()
-    else:
-        session_path = Path(session_path)
+    
+    # Always convert to Path object
+    session_path = Path(session_path)
     
     # Return empty if file doesn't exist
     if not session_path.exists():
