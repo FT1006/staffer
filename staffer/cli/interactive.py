@@ -152,7 +152,7 @@ def main():
     terminal.display_welcome()
     terminal.display_success("Type 'exit' or 'quit' to end the session")
     
-    # Load previous session with metadata
+    # Load previous session with metadata 
     messages, metadata = load_session_with_metadata()
     
     # Check for directory change
