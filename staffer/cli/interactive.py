@@ -193,7 +193,7 @@ def main():
                 continue
                 
             if user_input.lower() in ['exit', 'quit']:
-                # Save session with metadata before exiting
+                # Save session with metadata before exiting - Slice 4 feature
                 save_session_with_metadata(messages)
                 terminal.display_success("Session saved")
                 terminal.display_success("Goodbye!")
@@ -210,7 +210,7 @@ def main():
             print()  # Add spacing between responses
             
         except (EOFError, KeyboardInterrupt):
-            # Save session before exiting on Ctrl+C
+            # Save session before exiting on Ctrl+C - Slice 4 feature
             save_session_with_metadata(messages)
             terminal.display_success("Session saved")
             print("\nGoodbye!")
