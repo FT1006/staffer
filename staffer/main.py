@@ -208,7 +208,23 @@ def main():
   staffer "analyze this codebase"
   staffer "fix the bug in main.py" --verbose
   staffer "create a test file for the utils module"
-  staffer --interactive """
+  staffer --interactive
+
+Interactive Mode Features:
+  • Rich terminal interface with syntax highlighting
+  • Smart prompts showing directory and message count: staffer ~/project [5 msgs]>
+  • Up/down arrow keys for command history navigation
+  • Session commands: /reset, /session, /help
+  • Directory change detection (prompts when switching folders)
+  • Auto-save conversations, persistent command history
+  • Visual feedback: ✅ success, ⚠️ warnings, processing spinners
+  • Function call indicators showing what AI is doing
+  • Type 'exit' or 'quit' to save and quit
+
+Terminal Experience:
+  • Enhanced mode: Rich UI when prompt-toolkit/rich/yaspin available
+  • Basic mode: Clean fallback that works everywhere
+  • Automatic detection and graceful fallback"""
     )
     parser.add_argument("prompt", nargs='?', help="The task or question for the AI agent")
     parser.add_argument("--verbose", action="store_true", help="Show detailed function call information")
