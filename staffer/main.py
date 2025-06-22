@@ -219,7 +219,7 @@ Terminal Experience:
     parser.add_argument("prompt", nargs='?', help="The task or question for the AI agent")
     parser.add_argument("--verbose", action="store_true", help="Show detailed function call information")
     parser.add_argument("--interactive", action="store_true", help="Start interactive mode")
-    parser.add_argument("--version", action="version", version="Staffer 0.1.0")
+    parser.add_argument("--version", action="version", version="Staffer 0.2.0")
     
     args = parser.parse_args()
     

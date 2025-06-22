@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="staffer",
-    version="0.1.0",
+    version="0.2.0",
     description="AI coding agent that works in any directory",
     author="Staffer Team",
     packages=find_packages(),
