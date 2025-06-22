@@ -22,9 +22,15 @@ def check_directory_change(metadata):
     return current_cwd != session_cwd
 
 
-def prompt_directory_change(old_dir, new_dir):
+def prompt_directory_change(old_dir, new_dir, terminal=None):
     """Prompt user about directory change."""
-    print(f"Directory changed from {old_dir} to {new_dir}")
+    if terminal is None:
+        from ..ui.terminal import get_terminal_ui
+        terminal = get_terminal_ui()
+    
+    terminal.display_warning(f"Directory changed from {old_dir} to {new_dir}")
+    
+    # Use simple input for this focused prompt - easier to test
     choice = input("[N] Start new session  [K] Keep old session\nChoice (N/k): ")
     return choice.lower() not in ['k']
 
@@ -153,21 +159,21 @@ def main():
     terminal.display_success("Slice 4 - Directory Detection enabled")
     terminal.display_success("Type 'exit' or 'quit' to end the session")
     
-    # Load previous session with metadata 
+    # Load previous session with metadata - Slice 4 feature
     messages, metadata = load_session_with_metadata()
     
-    # Check for directory change
+    # Check for directory change - Slice 4 feature
     if messages and check_directory_change(metadata):
         old_dir = metadata.get('cwd', 'unknown')
         new_dir = os.getcwd()
         
-        if prompt_directory_change(old_dir, new_dir):
+        if prompt_directory_change(old_dir, new_dir, terminal):
             # User wants new session
             messages = []
-            print("Starting new session...")
+            terminal.display_success("Starting new session...")
         else:
             # User wants to keep old session
-            print(f"Keeping session from {old_dir}")
+            terminal.display_success(f"Keeping session from {old_dir}")
     
     if messages:
         terminal.display_success(f"Restored conversation with {len(messages)} previous messages")
@@ -179,7 +185,7 @@ def main():
             messages = initialize_session_with_working_directory(messages)
             save_session_with_metadata(messages)  # Keep metadata saving for directory detection
     
-    print()
+    print()  # Spacing
     
     while True:
         try:

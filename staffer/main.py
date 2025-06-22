@@ -15,59 +15,67 @@ def _is_ancestor(path: Path, cwd: Path) -> bool:
 
 
 def prune_stale_dir_msgs(msgs, cwd: Path, max_messages=120):
-    """Filter stale directory context with ancestor path detection. Returns new list, no mutation."""
-    cwd_str = str(cwd)
+    """Filter stale directory context with ancestor path detection.
     
-    # Get all ancestor paths to filter out
-    ancestor_paths = []
-    current = cwd.parent
-    while current != current.parent:  # Stop at filesystem root
-        ancestor_paths.append(str(current))
-        current = current.parent
+    NOTE: Currently deactivated due to 1M token context window.
+    Preserved as reference for future use or smaller context models.
+    """
+    # DEACTIVATED: Return all messages without pruning for 1M context
+    return msgs
     
-    kept = []
-    for m in msgs:
-        skip_message = False
-        
-        if m.role == "model" and m.parts:
-            text = m.parts[0].text or ""
-            
-            # Drop old cwd headers that don't match current directory
-            if "[Working directory:" in text and cwd_str not in text:
-                skip_message = True
-                
-            # Drop messages that specifically reference working IN ancestor paths
-            else:
-                for ancestor_path in ancestor_paths:
-                    # Only filter if it looks like a working directory reference
-                    if (cwd_str not in text and 
-                        (text.endswith(str(ancestor_path)) or 
-                         f"in {ancestor_path}" in text or
-                         f"Working in {ancestor_path}" in text or
-                         f"Files in {ancestor_path}" in text)):
-                        skip_message = True
-                        break
-                
-        # Enhanced tool response filtering for ancestor directories
-        elif m.role == "tool" and m.parts:
-            fc = getattr(m.parts[0], "function_response", None)
-            if fc and getattr(fc, "name", "") == "get_files_info":
-                result = str(getattr(fc, "response", {}).get("result", ""))
-                # Drop tool responses that start with ancestor paths but not current path
-                for ancestor_path in ancestor_paths:
-                    if result.startswith(ancestor_path) and not result.startswith(cwd_str):
-                        skip_message = True
-                        break
-        
-        if not skip_message:
-            kept.append(m)
-    
-    # Hard limit on message count to prevent token overflow
-    if len(kept) > max_messages:
-        # Keep most recent messages to preserve context
-        kept = kept[-max_messages:]
-    
-    return kept
+    # ORIGINAL PRUNING LOGIC PRESERVED BELOW FOR REFERENCE:
+    # cwd_str = str(cwd)
+    # 
+    # # Get all ancestor paths to filter out
+    # ancestor_paths = []
+    # current = cwd.parent
+    # while current != current.parent:  # Stop at filesystem root
+    #     ancestor_paths.append(str(current))
+    #     current = current.parent
+    # 
+    # kept = []
+    # for m in msgs:
+    #     skip_message = False
+    #     
+    #     if m.role == "model" and m.parts:
+    #         text = m.parts[0].text or ""
+    #         
+    #         # Drop old cwd headers that don't match current directory
+    #         if "[Working directory:" in text and cwd_str not in text:
+    #             skip_message = True
+    #             
+    #         # Drop messages that specifically reference working IN ancestor paths
+    #         else:
+    #             for ancestor_path in ancestor_paths:
+    #                 # Only filter if it looks like a working directory reference
+    #                 if (cwd_str not in text and 
+    #                     (text.endswith(str(ancestor_path)) or 
+    #                      f"in {ancestor_path}" in text or
+    #                      f"Working in {ancestor_path}" in text or
+    #                      f"Files in {ancestor_path}" in text)):
+    #                     skip_message = True
+    #                     break
+    #             
+    #     # Enhanced tool response filtering for ancestor directories
+    #     elif m.role == "tool" and m.parts:
+    #         fc = getattr(m.parts[0], "function_response", None)
+    #         if fc and getattr(fc, "name", "") == "get_files_info":
+    #             result = str(getattr(fc, "response", {}).get("result", ""))
+    #             # Drop tool responses that start with ancestor paths but not current path
+    #             for ancestor_path in ancestor_paths:
+    #                 if result.startswith(ancestor_path) and not result.startswith(cwd_str):
+    #                     skip_message = True
+    #                     break
+    #     
+    #     if not skip_message:
+    #         kept.append(m)
+    # 
+    # # Hard limit on message count to prevent token overflow
+    # if len(kept) > max_messages:
+    #     # Keep most recent messages to preserve context
+    #     kept = kept[-max_messages:]
+    # 
+    # return kept
 
 
 def build_prompt(messages, working_directory=None):
@@ -100,7 +108,7 @@ All paths you provide should be relative to the working directory: {working_dire
 You have access to these functions - use them confidently to explore directories, read files, and accomplish tasks."""
 
 
-def process_prompt(prompt, verbose=False, messages=None):
+def process_prompt(prompt, verbose=False, messages=None, terminal=None):
     """Process a single prompt using the AI agent."""
     if messages is None:
         messages = []
@@ -112,7 +120,9 @@ def process_prompt(prompt, verbose=False, messages=None):
         print(f"User prompt: {prompt}")
 
     # Filter stale directory context from conversation history
-    clean_messages = prune_stale_dir_msgs(messages, working_directory)
+    # NOTE: Pruning deactivated due to 1M token context window - keeping as reference
+    # clean_messages = prune_stale_dir_msgs(messages, working_directory)
+    clean_messages = messages  # Use all messages without pruning
     system_prompt = build_prompt(clean_messages, working_directory)
 
     # Add current user prompt
@@ -150,6 +160,9 @@ def process_prompt(prompt, verbose=False, messages=None):
                 for part in candidate.content.parts:
                     if part.function_call:
                         function_called = True
+                        # Display function call indicator if terminal provided
+                        if terminal:
+                            terminal.display_function_call(part.function_call.name)
                         if verbose:
                             function_call_result = call_function(part.function_call, working_directory, verbose=True)
                         else:
@@ -172,7 +185,10 @@ def process_prompt(prompt, verbose=False, messages=None):
                     )
                     conversation_for_llm.append(tool_message)
             if not function_called:
-                print(f"-> {res.text}")
+                if terminal:
+                    terminal.display_ai_response(res.text)
+                else:
+                    print(f"-> {res.text}")
                 break
         i+=1
 
