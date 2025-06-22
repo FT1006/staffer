@@ -35,3 +35,39 @@ def function_call(name, arguments=None):
             arguments=arguments
         ))]
     )
+
+
+def session_metadata(cwd=None, timestamp=None):
+    """Create session metadata for testing."""
+    import os
+    from datetime import datetime
+    
+    if cwd is None:
+        cwd = os.getcwd()
+    if timestamp is None:
+        timestamp = datetime.now().isoformat()
+    
+    return {
+        'cwd': str(cwd),
+        'timestamp': timestamp
+    }
+
+
+def mock_terminal_ui(input_sequence=None):
+    """Create a mock terminal UI with predictable input sequence."""
+    from unittest.mock import MagicMock
+    
+    if input_sequence is None:
+        input_sequence = ['exit']
+    
+    mock_terminal = MagicMock()
+    mock_terminal.get_input.side_effect = input_sequence
+    mock_terminal.show_spinner.return_value = MagicMock(__enter__=MagicMock(), __exit__=MagicMock())
+    
+    # Add all the terminal UI methods that might be called
+    mock_terminal.display_welcome = MagicMock()
+    mock_terminal.display_success = MagicMock()
+    mock_terminal.display_info = MagicMock()
+    mock_terminal.display_error = MagicMock()
+    
+    return mock_terminal
