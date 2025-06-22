@@ -195,10 +195,10 @@ def main():
         description="Staffer - AI coding agent that works in any directory",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  staffer "analyze this codebase"
+  staffer                           # Start interactive mode (default)
+  staffer "analyze this codebase"   # Single command mode
   staffer "fix the bug in main.py" --verbose
-  staffer "create a test file for the utils module"
-  staffer --interactive
+  staffer --interactive             # Explicit interactive mode
 
 Interactive Mode Features:
   • Rich terminal interface with syntax highlighting
@@ -223,16 +223,13 @@ Terminal Experience:
     
     args = parser.parse_args()
     
-    # Handle interactive mode
-    if args.interactive:
+    # Handle interactive mode - either explicit flag or no prompt provided
+    if args.interactive or not args.prompt:
         from .cli.interactive import main as interactive_main
         interactive_main()
         return
     
-    # Require prompt for single command mode
-    if not args.prompt:
-        parser.error("prompt is required unless using --interactive mode")
-    
+    # Single command mode with prompt
     process_prompt(args.prompt, args.verbose)
 
 if __name__ == "__main__":

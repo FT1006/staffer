@@ -11,13 +11,13 @@ pip install -e .
 # Set your API key
 export GEMINI_API_KEY=your_key_here
 
-# Go to any folder and use AI
+# Go to any folder and chat with AI
 cd /your/project
+staffer                    # Start interactive mode (default)
+
+# Or run single commands
 staffer "what files are here?"
 staffer "add error handling to main.py"
-
-# Or chat with your folder
-staffer --interactive
 ```
 
 ## How it works
@@ -85,35 +85,34 @@ export GEMINI_API_KEY=your_actual_api_key_here
 ## Examples
 
 ```bash
-# Jump into any folder and ask AI about it
+# Start interactive chat in any folder (default)
 cd ~/my-python-project
-staffer "what's in this folder?"
-staffer "create a README for this project"
-staffer "fix the bug in main.py"
-
-# Chat with your folder interactively (enhanced terminal mode)
-cd ~/my-web-app
-staffer --interactive
+staffer
 # 🚀 Staffer - AI in Folders
 # Enhanced terminal mode enabled
-staffer ~/my-web-app [0 msgs]> analyze this codebase
+staffer ~/my-python-project [0 msgs]> what's in this folder?
 # 🔧 Calling get_files_info...
-# [AI analyzes your code with syntax highlighting]
-staffer ~/my-web-app [4 msgs]> add tests for the main functions  
+# [AI shows your files with syntax highlighting]
+staffer ~/my-python-project [2 msgs]> create a README for this project
 # ⚡ AI is thinking...
-# [AI creates test files]
-staffer ~/my-web-app [8 msgs]> exit
+# [AI creates README.md]
+staffer ~/my-python-project [4 msgs]> exit
 # ✅ Session saved
 # ✅ Goodbye!
 
+# Run single commands without entering interactive mode
+cd ~/my-web-app
+staffer "fix the bug in main.py"
+staffer "add tests for the main functions"
+
 # Switch folders, AI adapts automatically
 cd ~/my-data-project
-staffer --interactive
+staffer
 # Staffer notices you changed folders
 Directory changed from ~/my-web-app to ~/my-data-project
 [N] Start new session  [K] Keep old session
 Choice (N/k): n
-staffer> what kind of project is this?
+staffer ~/my-data-project [0 msgs]> what kind of project is this?
 ```
 
 ## Troubleshooting
