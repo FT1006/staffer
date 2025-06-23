@@ -4,8 +4,12 @@ AI that works in whatever folder you're in. Just `cd` to any project and talk to
 
 ## Quick Start
 
+Get a free API key at [Google AI Studio](https://aistudio.google.com/app/apikey), then:
+
 ```bash
 # Install
+git clone https://github.com/FT1006/staffer.git
+cd staffer
 pip install -e .
 
 # Set your API key
@@ -13,7 +17,10 @@ export GEMINI_API_KEY=your_key_here
 
 # Go to any folder and chat with AI
 cd /your/project
-staffer                    # Start interactive mode (default)
+staffer # Start interactive mode (default)
+
+# Optional: Install enhanced terminal dependencies
+pip install prompt-toolkit rich yaspin
 
 # Or run single commands
 staffer "what files are here?"
@@ -34,7 +41,7 @@ staffer "add error handling to main.py"
 
 - **Smart sessions** - Automatically saves and restores your conversations
 - **Directory detection** - Notices when you switch folders and asks what to do
-- **Session commands** - Use `/reset`, `/session`, `/help` in interactive mode  
+- **Session commands** - Use `/reset`, `/session`, `/help` in interactive mode
 - **Natural exit** - Just type `exit` or `quit` to save and leave
 - **Arrow key history** - Use ↑↓ to navigate through previous commands
 - **Persistent history** - Command history saved across sessions
@@ -66,21 +73,6 @@ pip install prompt-toolkit rich yaspin
 ```
 
 If not installed, Staffer automatically falls back to basic terminal mode.
-
-## Setup
-
-Get a free API key at [Google AI Studio](https://aistudio.google.com/app/apikey), then:
-
-```bash
-git clone https://github.com/your-username/staffer.git
-cd staffer
-pip install -e .
-
-# Optional: Install enhanced terminal dependencies
-pip install prompt-toolkit rich yaspin
-
-export GEMINI_API_KEY=your_actual_api_key_here
-```
 
 ## Examples
 
@@ -118,17 +110,20 @@ staffer ~/my-data-project [0 msgs]> what kind of project is this?
 ## Troubleshooting
 
 **API Key not working?**
+
 ```bash
 echo $GEMINI_API_KEY  # Should show your key
 ```
 
 **Command not found?**
+
 ```bash
 pip install -e .  # Reinstall
 which staffer      # Check if in PATH
 ```
 
 **Need help?**
+
 ```bash
 staffer --help
 ```
