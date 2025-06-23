@@ -44,7 +44,9 @@ excel-mcp-server/
 docs/ci-test-debugging-guide.md
 calculator/
 tests_isolated/
+WORKTREE_GUIDE.md
 
 # Git worktrees
 /staffer-slice4/
 /staffer-slice5/
+calculator/
