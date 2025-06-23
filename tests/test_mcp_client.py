@@ -38,3 +38,24 @@ def test_mcp_client_handles_invalid_response():
         client.send_request("echo", {"message": "hello"})
     
     client.close()
+
+
+def test_tool_discovery_returns_all_tools():
+    """Test that MCP client can discover tools from server."""
+    mcp_server_path = os.path.join(
+        os.path.dirname(__file__), 
+        "test_servers", 
+        "test_mcp_server.py"
+    )
+    
+    client = McpClient(["python3", mcp_server_path])
+    
+    # This should fail because McpClient doesn't have initialize() or list_tools()
+    client.initialize()
+    tools = client.list_tools()
+    
+    assert len(tools) == 2
+    assert tools[0]["name"] == "test_tool" 
+    assert tools[1]["name"] == "another_tool"
+    
+    client.close()

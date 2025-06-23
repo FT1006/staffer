@@ -29,6 +29,7 @@ class McpClient:
             stderr=subprocess.PIPE,
             text=True
         )
+        self.initialized = False
     
     def send_request(self, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -62,6 +63,28 @@ class McpClient:
         if self.process:
             self.process.terminate()
             self.process.wait()
+    
+    def initialize(self) -> None:
+        """Initialize MCP session with handshake."""
+        self.send_request("initialize", {
+            "capabilities": {},
+            "clientInfo": {"name": "staffer", "version": "1.0"},
+            "protocolVersion": "2024-11-05"
+        })
+        self.initialized = True
+    
+    def list_tools(self) -> List[Dict[str, Any]]:
+        """
+        List all available tools from the MCP server.
+        
+        Returns:
+            List of tool dictionaries with name, description, and inputSchema
+        """
+        if not self.initialized:
+            self.initialize()
+        
+        response = self.send_request("tools/list")
+        return response.get("result", {}).get("tools", [])
     
     def __del__(self) -> None:
         """Ensure process cleanup on object destruction."""
