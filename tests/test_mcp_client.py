@@ -1,5 +1,6 @@
 """Tests for MCP client subprocess communication."""
 import os
+import json
 import pytest
 from staffer.mcp.client import McpClient
 
@@ -18,5 +19,22 @@ def test_mcp_client_can_communicate():
     
     assert response["result"] == "hello"
     assert response["jsonrpc"] == "2.0"
+    
+    client.close()
+
+
+def test_mcp_client_handles_invalid_response():
+    """Test that MCP client handles malformed JSON responses gracefully."""
+    # This server will send invalid JSON
+    invalid_server_cmd = [
+        "python3", "-c", 
+        "import sys; print('invalid json'); sys.stdout.flush()"
+    ]
+    
+    client = McpClient(invalid_server_cmd)
+    
+    # This should raise JSONDecodeError since the response is invalid
+    with pytest.raises(json.JSONDecodeError):
+        client.send_request("echo", {"message": "hello"})
     
     client.close()
