@@ -4,6 +4,46 @@ from google.adk.tools import BaseTool
 from typing import Dict, Any
 
 
+def _convert_schema_to_genai(prop_schema: Dict[str, Any]) -> genai.protos.Schema:
+    """
+    Recursively convert a JSON schema property to GenAI Schema format.
+    
+    Args:
+        prop_schema: JSON schema property definition
+        
+    Returns:
+        GenAI Schema object
+    """
+    prop_type = prop_schema.get("type")
+    description = prop_schema.get("description", "")
+    
+    # Handle primitive types
+    if prop_type == "string":
+        return genai.protos.Schema(type=genai.protos.Type.STRING, description=description)
+    elif prop_type == "number":
+        return genai.protos.Schema(type=genai.protos.Type.NUMBER, description=description)
+    elif prop_type == "boolean":
+        return genai.protos.Schema(type=genai.protos.Type.BOOLEAN, description=description)
+    
+    # Handle object type with nested properties
+    elif prop_type == "object":
+        nested_properties = {}
+        if "properties" in prop_schema:
+            for nested_name, nested_schema in prop_schema["properties"].items():
+                nested_properties[nested_name] = _convert_schema_to_genai(nested_schema)
+        
+        return genai.protos.Schema(
+            type=genai.protos.Type.OBJECT,
+            description=description,
+            properties=nested_properties,
+            required=prop_schema.get("required", [])
+        )
+    
+    # Default fallback for unsupported types
+    else:
+        return genai.protos.Schema(type=genai.protos.Type.STRING, description=description)
+
+
 def convert_adk_tool_to_genai(adk_tool: BaseTool) -> genai.protos.FunctionDeclaration:
     """
     Convert an ADK tool to Google GenAI function declaration format.
@@ -22,20 +62,7 @@ def convert_adk_tool_to_genai(adk_tool: BaseTool) -> genai.protos.FunctionDeclar
     
     if "properties" in schema:
         for prop_name, prop_schema in schema["properties"].items():
-            prop_type = prop_schema.get("type")
-            
-            # Handle string type
-            if prop_type == "string":
-                genai_properties[prop_name] = genai.protos.Schema(
-                    type=genai.protos.Type.STRING,
-                    description=prop_schema.get("description", "")
-                )
-            # Handle number type
-            elif prop_type == "number":
-                genai_properties[prop_name] = genai.protos.Schema(
-                    type=genai.protos.Type.NUMBER,
-                    description=prop_schema.get("description", "")
-                )
+            genai_properties[prop_name] = _convert_schema_to_genai(prop_schema)
     
     # Create GenAI function declaration
     return genai.protos.FunctionDeclaration(
