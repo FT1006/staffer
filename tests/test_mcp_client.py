@@ -59,3 +59,23 @@ def test_tool_discovery_returns_all_tools():
     assert tools[1]["name"] == "another_tool"
     
     client.close()
+
+
+def test_tool_discovery_with_selection():
+    """Test that MCP client can filter tools by selection."""
+    mcp_server_path = os.path.join(
+        os.path.dirname(__file__), 
+        "test_servers", 
+        "test_mcp_server.py"
+    )
+    
+    # This should fail because McpClient doesn't have selected_tools parameter
+    client = McpClient(["python3", mcp_server_path], selected_tools=["test_tool"])
+    
+    tools = client.list_tools()
+    
+    # Should only get the selected tool
+    assert len(tools) == 1
+    assert tools[0]["name"] == "test_tool"
+    
+    client.close()
