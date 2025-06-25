@@ -23,25 +23,29 @@ class TestProductionConfigurability:
         # This will fail until we create the production config
         assert production_config_path.exists(), "production.yaml should exist"
     
-    def test_server_settings_use_environment_variables(self):
-        """RED: Test that server settings resolve from environment variables."""
+    def test_production_config_has_no_server_section(self):
+        """RED: Test that production config uses STDIO protocol (no server section)."""
         production_config_path = Path(__file__).parent.parent / "production.yaml"
         
         if not production_config_path.exists():
             pytest.skip("production.yaml not created yet")
             
-        # Read raw YAML to check for environment variable syntax
+        # Read raw YAML to check for STDIO-only configuration
         with open(production_config_path, 'r') as f:
             raw_config = f.read()
         
-        # Should use environment variable substitution syntax
-        assert "${MCP_AGGREGATOR_HOST" in raw_config or "${HOST" in raw_config, \
-            "Server host should use environment variable substitution"
-        assert "${MCP_AGGREGATOR_PORT" in raw_config or "${PORT" in raw_config, \
-            "Server port should use environment variable substitution"
+        # Should NOT have server section (STDIO protocol)
+        import yaml
+        config_data = yaml.safe_load(raw_config)
+        assert "server" not in config_data, \
+            "Production config should not have server section for STDIO protocol"
+        assert "host" not in raw_config, \
+            "Production config should not reference host (STDIO protocol)"
+        assert "port" not in raw_config, \
+            "Production config should not reference port (STDIO protocol)"
     
-    def test_server_settings_have_sensible_defaults(self):
-        """RED: Test that server settings have defaults when env vars missing."""
+    def test_production_config_loads_without_server_section(self):
+        """RED: Test that production config loads successfully without server section."""
         production_config_path = Path(__file__).parent.parent / "production.yaml"
         
         if not production_config_path.exists():
@@ -49,12 +53,12 @@ class TestProductionConfigurability:
             
         # Test with no environment variables set
         with patch.dict(os.environ, {}, clear=True):
-            # This will fail until we implement environment variable resolution in config loader
+            # Should load successfully with STDIO config
             config = load_config(str(production_config_path))
             
-            # Should have defaults when env vars not set
-            assert hasattr(config.server, 'get') or isinstance(config.server, dict), \
-                "Server config should support default value resolution"
+            # Should NOT have server section for STDIO protocol
+            assert config.server is None, \
+                "Production config should not have server settings for STDIO protocol"
     
     def test_mcp_server_paths_are_configurable(self):
         """RED: Test that MCP server paths come from environment variables."""
@@ -92,37 +96,35 @@ class TestProductionConfigurability:
         assert config.tool_selection['strategy'] in valid_strategies, \
             f"Tool selection strategy should be one of {valid_strategies}"
     
-    def test_configuration_adapts_to_different_environments(self):
-        """RED: Test that config works across dev/staging/production environments."""
+    def test_stdio_configuration_adapts_to_different_environments(self):
+        """RED: Test that STDIO config works across dev/staging/production environments."""
         production_config_path = Path(__file__).parent.parent / "production.yaml"
         
         if not production_config_path.exists():
             pytest.skip("production.yaml not created yet")
             
-        # Test development environment
+        # Test development environment (STDIO only)
         with patch.dict(os.environ, {
-            'MCP_AGGREGATOR_HOST': 'localhost',
-            'MCP_AGGREGATOR_PORT': '8080',
             'EXCEL_MCP_PATH': '/dev/excel-server',
             'ANALYTICS_MCP_PATH': '/dev/analytics-server'
         }):
             dev_config = load_config(str(production_config_path))
-            # Should work in development
+            # Should work in development with STDIO
             assert len(dev_config.source_servers) > 0
+            assert dev_config.server is None  # No server section for STDIO
         
-        # Test production environment  
+        # Test production environment (STDIO only)
         with patch.dict(os.environ, {
-            'MCP_AGGREGATOR_HOST': 'prod.company.com',
-            'MCP_AGGREGATOR_PORT': '9000',
             'EXCEL_MCP_PATH': '/opt/excel-server',
             'ANALYTICS_MCP_PATH': '/opt/analytics-server'
         }):
             prod_config = load_config(str(production_config_path))
-            # Should work in production
+            # Should work in production with STDIO
             assert len(prod_config.source_servers) > 0
+            assert prod_config.server is None  # No server section for STDIO
     
-    def test_environment_variable_documentation_exists(self):
-        """RED: Test that environment variables are documented for deployment."""
+    def test_stdio_environment_variable_documentation_exists(self):
+        """RED: Test that STDIO environment variables are documented for deployment."""
         production_config_path = Path(__file__).parent.parent / "production.yaml"
         env_example_path = Path(__file__).parent.parent / ".env.example"
         
@@ -134,16 +136,19 @@ class TestProductionConfigurability:
         
         env_content = env_example_path.read_text()
         
-        # Should document all configurable environment variables
+        # Should document STDIO-only environment variables (no HOST/PORT)
         required_env_vars = [
-            'MCP_AGGREGATOR_HOST',
-            'MCP_AGGREGATOR_PORT',
             'EXCEL_MCP_PATH',
             'ANALYTICS_MCP_PATH'
         ]
         
         for env_var in required_env_vars:
             assert f"{env_var}=" in env_content, f".env.example should document {env_var}"
+            
+        # Should NOT document HTTP variables
+        forbidden_vars = ['HOST', 'PORT', 'MCP_AGGREGATOR_HOST', 'MCP_AGGREGATOR_PORT']
+        for var in forbidden_vars:
+            assert var not in env_content, f".env.example should not document HTTP variable {var}"
     
     def test_configuration_supports_feature_toggles(self):
         """RED: Test that servers can be enabled/disabled via environment."""
