@@ -6,7 +6,7 @@ Uses ADK MCPToolset to properly communicate with MCP servers via stdio protocol.
 import asyncio
 import os
 from typing import List, Dict, Any, Optional
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioServerParameters, StdioConnectionParams
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioServerParameters
 
 
 class StafferMCPClient:
@@ -35,12 +35,8 @@ class StafferMCPClient:
                     cwd=self.aggregator_path
                 )
                 
-                connection_params = StdioConnectionParams(
-                    server_params=server_params
-                )
-                
-                # Create MCPToolset to connect to aggregator
-                self.toolset = MCPToolset(connection_params=connection_params)
+                # Create MCPToolset to connect to aggregator (using server_params directly)
+                self.toolset = MCPToolset(server_params=server_params)
                 
             except Exception as e:
                 print(f"Failed to connect to MCP aggregator: {e}")
