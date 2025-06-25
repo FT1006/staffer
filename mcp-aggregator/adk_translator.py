@@ -39,6 +39,17 @@ def _convert_schema_to_genai(prop_schema: Dict[str, Any]) -> genai.protos.Schema
             required=prop_schema.get("required", [])
         )
     
+    # Handle array type
+    elif prop_type == "array":
+        items_schema = prop_schema.get("items", {"type": "string"})
+        items_genai_schema = _convert_schema_to_genai(items_schema)
+        
+        return genai.protos.Schema(
+            type=genai.protos.Type.ARRAY,
+            description=description,
+            items=items_genai_schema
+        )
+    
     # Default fallback for unsupported types
     else:
         return genai.protos.Schema(type=genai.protos.Type.STRING, description=description)
