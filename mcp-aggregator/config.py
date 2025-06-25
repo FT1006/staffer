@@ -1,7 +1,8 @@
 """Configuration management for MCP Aggregator."""
 import yaml
 import os
-from typing import Dict, List, Any, Optional
+import re
+from typing import Dict, List, Any, Optional, Union
 from dataclasses import dataclass
 
 
@@ -43,10 +44,52 @@ class AggregatorConfig:
         return [server for server in self.source_servers if server.is_available]
 
 
+def _substitute_env_vars(obj: Any) -> Any:
+    """Recursively substitute environment variables in configuration object."""
+    if isinstance(obj, str):
+        # Pattern matches ${VAR} or ${VAR:-default}
+        pattern = r'\$\{([^}]+)\}'
+        
+        def replace_env_var(match):
+            var_expr = match.group(1)
+            if ':-' in var_expr:
+                var_name, default_value = var_expr.split(':-', 1)
+                value = os.getenv(var_name.strip(), default_value.strip())
+            else:
+                value = os.getenv(var_expr.strip(), '')
+            
+            # Try to convert to appropriate type
+            if value.isdigit():
+                return int(value)
+            elif value.lower() in ('true', 'false'):
+                return value.lower() == 'true'
+            else:
+                return value
+        
+        # Handle the case where the entire string is a variable substitution
+        if re.fullmatch(pattern, obj):
+            return replace_env_var(re.match(pattern, obj))
+        else:
+            # Handle partial substitutions within strings
+            return re.sub(pattern, lambda m: str(replace_env_var(m)), obj)
+    
+    elif isinstance(obj, dict):
+        return {key: _substitute_env_vars(value) for key, value in obj.items()}
+    
+    elif isinstance(obj, list):
+        return [_substitute_env_vars(item) for item in obj]
+    
+    else:
+        return obj
+
+
 def load_config(config_path: str = "aggregation.yaml") -> AggregatorConfig:
-    """Load configuration from YAML file."""
+    """Load configuration from YAML file with environment variable substitution."""
     with open(config_path, 'r') as f:
         config_data = yaml.safe_load(f)
+    
+    # Substitute environment variables
+    config_data = _substitute_env_vars(config_data)
     
     # Parse server configurations
     source_servers = []
