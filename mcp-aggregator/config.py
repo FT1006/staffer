@@ -36,7 +36,7 @@ class AggregatorConfig:
     instruction: str
     source_servers: List[ServerConfig]
     tool_selection: Dict[str, Any]
-    server: Dict[str, Any]
+    server: Optional[Dict[str, Any]] = None
     
     @property
     def available_servers(self) -> List[ServerConfig]:
@@ -111,7 +111,7 @@ def load_config(config_path: str = "aggregation.yaml") -> AggregatorConfig:
         instruction=config_data.get('instruction', ''),
         source_servers=source_servers,
         tool_selection=config_data.get('tool_selection', {}),
-        server=config_data.get('server', {})
+        server=config_data.get('server') if 'server' in config_data else None
     )
 
 
