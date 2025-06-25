@@ -39,7 +39,4 @@ tool_selection:
   exclude_patterns: ["debug_", "internal_", "test_", "_test"]
   max_tools_per_server: ${MAX_TOOLS_PER_SERVER:-25}
 
-server:
-  host: "${MCP_AGGREGATOR_HOST:-localhost}"
-  port: ${MCP_AGGREGATOR_PORT:-8080}
-  name: "staffer-production-aggregator"
+# NO server section - STDIO protocol only
