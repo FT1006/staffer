@@ -99,3 +99,55 @@ def adk_object_tool():
             "required": ["config"]
         }
     )
+
+
+def create_mock_adk_tool(name, description=None, with_schema=True):
+    """Create a mock ADK tool for testing."""
+    if description is None:
+        description = f"Mock ADK tool: {name}"
+    
+    if with_schema:
+        schema = {
+            "type": "object",
+            "properties": {
+                "input": {"type": "string", "description": f"Input for {name}"}
+            },
+            "required": ["input"]
+        }
+    else:
+        # For tools without schema, return empty object schema instead of None
+        schema = {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    
+    return adk_tool(name, description, schema)
+
+
+def create_test_server_config(name="test_server", enabled=True, priority=1):
+    """Create a ServerConfig for testing."""
+    from config import ServerConfig
+    return ServerConfig(
+        name=name,
+        command="python",
+        args=["-m", f"{name}_module"],
+        cwd_env="PWD",
+        tool_filter=[f"{name}_tool"],
+        priority=priority,
+        enabled=enabled
+    )
+
+
+def create_mock_mcp_tool(name, description=None):
+    """Create a mock MCP tool (schema-less tool)."""
+    if description is None:
+        description = f"Mock MCP tool: {name}"
+    
+    class MockMCPTool:
+        def __init__(self, name, description):
+            self.name = name
+            self.description = description
+            # No input_schema method - simulates schema-less MCP tool
+    
+    return MockMCPTool(name, description)

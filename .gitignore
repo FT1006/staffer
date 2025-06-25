@@ -48,3 +48,6 @@ tests_isolated/
 # Git worktrees
 /staffer-slice4/
 /staffer-slice5/
+
+# Job seeking documentation
+job-seeking-docs/

@@ -1,0 +1,38 @@
+domain: "test_staffer_tools"
+model: "gemini-2.0-flash"
+instruction: "Test configuration for Staffer's tool aggregation service integration tests."
+
+source_servers:
+  - name: "mock_excel"
+    command: "python"
+    args: ["-m", "tests.mock_servers.excel_server"]
+    cwd_env: "PWD"  # Use current directory for testing
+    tool_filter: ["excel_read_sheet", "excel_write_to_sheet"]
+    priority: 1
+    enabled: true
+    
+  - name: "mock_analytics"
+    command: "python"
+    args: ["-m", "tests.mock_servers.analytics_server"]
+    cwd_env: "PWD"
+    tool_filter: ["load_dataset", "find_correlations"]
+    priority: 2
+    enabled: true
+
+  - name: "disabled_server"
+    command: "python"
+    args: ["-m", "tests.mock_servers.disabled_server"]
+    cwd_env: "PWD"
+    tool_filter: ["disabled_tool"]
+    priority: 3
+    enabled: false
+
+tool_selection:
+  strategy: "curated"
+  exclude_patterns: ["debug_", "internal_", "test_"]
+  max_tools_per_server: 5  # Lower for testing
+
+server:
+  host: "localhost"
+  port: 8081  # Different port from production
+  name: "test-staffer-tool-aggregator"
