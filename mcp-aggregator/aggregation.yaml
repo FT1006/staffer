@@ -1,0 +1,30 @@
+domain: "staffer_tools"
+model: "gemini-2.0-flash"
+instruction: "You are Staffer's tool aggregation service, providing curated tools from multiple MCP servers."
+
+source_servers:
+  - name: "excel"
+    command: "go"
+    args: ["run", "cmd/excel-mcp-server/main.go"]
+    cwd_env: "EXCEL_MCP_PATH"
+    tool_filter: ["excel_read_sheet", "excel_write_to_sheet"]
+    priority: 1
+    enabled: true
+    
+  - name: "analytics"
+    command: "python"
+    args: ["-m", "mcp_server"]
+    cwd_env: "ANALYTICS_MCP_PATH"
+    tool_filter: ["load_dataset", "find_correlations"]
+    priority: 2
+    enabled: false  # Disabled by default until server is set up
+
+tool_selection:
+  strategy: "curated"
+  exclude_patterns: ["debug_", "internal_", "test_"]
+  max_tools_per_server: 20
+
+server:
+  host: "localhost"
+  port: 8080
+  name: "staffer-tool-aggregator"
