@@ -17,13 +17,13 @@ Tests in this folder are protocol-agnostic or already use correct patterns:
 - `test_adk_integration_validation.py` - ADK integration validation
 - `test_server_config_path.py` - File path configuration
 - `test_yaml_config.py` - ✅ **FIXED** - YAML config without server section
+- `test_config_env_substitution.py` - ✅ **FIXED** - Environment substitution for STDIO only
 
 ### `http_polluted/` ⚠️  
 **Require rewriting for STDIO protocol**
 
 Tests in this folder contain HTTP protocol violations and must be updated:
 - `test_mcp_client.py` - Uses host/port configuration (should use MCPToolset)
-- `test_config_env_substitution.py` - Tests HTTP config environment substitution
 - `test_production_configs.py` - Production configs with HTTP settings
 - `test_adk_schema_validation.py` - May contain HTTP config validation
 
