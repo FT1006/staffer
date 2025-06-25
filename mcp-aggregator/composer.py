@@ -3,6 +3,8 @@ import asyncio
 from typing import Dict, List, Any, Optional
 from config import ServerConfig, AggregatorConfig
 from discovery import ToolDiscoveryEngine
+from adk_translator import convert_adk_tool_to_genai
+import google.generativeai as genai
 
 
 class GenericMCPServerComposer:
@@ -16,7 +18,7 @@ class GenericMCPServerComposer:
         self.discovery_engine = ToolDiscoveryEngine()
     
     async def get_all_tools(self) -> List[Any]:
-        """Get aggregated tools from all configured servers."""
+        """Get aggregated tools from all configured servers, converted to GenAI format."""
         # Get server configurations from config
         server_configs = self._extract_server_configs()
         
@@ -28,11 +30,14 @@ class GenericMCPServerComposer:
         
         for server_config in server_configs:
             try:
-                tools = await self._discover_tools_from_server(server_config)
+                adk_tools = await self._discover_tools_from_server(server_config)
+                
+                # Convert ADK tools to GenAI format using translator
+                genai_tools = self._convert_adk_tools_to_genai(adk_tools)
                 
                 # Handle conflict resolution by priority
-                for tool in tools:
-                    tool_name = tool.name
+                for genai_tool in genai_tools:
+                    tool_name = genai_tool.name
                     # Handle both dict and object server configs
                     if isinstance(server_config, dict):
                         server_priority = server_config.get('priority', 1)
@@ -47,14 +52,14 @@ class GenericMCPServerComposer:
                         if server_priority > existing_priority:
                             # Higher priority wins
                             all_tools[tool_name] = {
-                                'tool': tool,
+                                'tool': genai_tool,
                                 'priority': server_priority,
                                 'source': server_name
                             }
                     else:
                         # No conflict, add tool
                         all_tools[tool_name] = {
-                            'tool': tool,
+                            'tool': genai_tool,
                             'priority': server_priority,
                             'source': server_name
                         }
@@ -73,7 +78,7 @@ class GenericMCPServerComposer:
                 # Continue with other servers
                 continue
         
-        # Return just the tools (not the metadata)
+        # Return just the tools (not the metadata) in GenAI format
         return [tool_info['tool'] for tool_info in all_tools.values()]
     
     async def _discover_tools_from_server(self, server_config) -> List[Any]:
@@ -101,6 +106,44 @@ class GenericMCPServerComposer:
             return list(tools_dict.values())
         
         return []
+    
+    def _convert_adk_tools_to_genai(self, adk_tools: List[Any]) -> List[Any]:
+        """Convert ADK tools to GenAI format using translator."""
+        genai_tools = []
+        
+        for adk_tool in adk_tools:
+            try:
+                if hasattr(adk_tool, 'input_schema'):
+                    # ADK FunctionTool - use translator
+                    genai_tool = convert_adk_tool_to_genai(adk_tool)
+                    genai_tools.append(genai_tool)
+                else:
+                    # Tool without schema - create flexible declaration
+                    genai_tool = self._create_flexible_declaration(adk_tool)
+                    genai_tools.append(genai_tool)
+            except Exception as e:
+                # Log but continue with other tools
+                print(f"Warning: Failed to convert tool {getattr(adk_tool, 'name', 'unknown')}: {e}")
+                continue
+        
+        return genai_tools
+    
+    def _create_flexible_declaration(self, tool: Any) -> Any:
+        """Create GenAI declaration for tool without schema."""
+        # For tools without complex schemas, create a simple string parameter
+        return genai.protos.FunctionDeclaration(
+            name=getattr(tool, 'name', 'unknown_tool'),
+            description=getattr(tool, 'description', 'Tool'),
+            parameters=genai.protos.Schema(
+                type=genai.protos.Type.OBJECT,
+                properties={
+                    'input': genai.protos.Schema(
+                        type=genai.protos.Type.STRING,
+                        description='Tool input parameters as JSON string'
+                    )
+                }
+            )
+        )
     
     def _extract_server_configs(self) -> List[Any]:
         """Extract server configurations from the config."""
