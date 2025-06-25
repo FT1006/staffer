@@ -67,11 +67,13 @@ def _discover_mcp_tools():
 
 async def _async_discover_mcp_tools():
     """Async helper to discover MCP tools."""
-    # Create MCP client with aggregator configuration
+    import os
+    
+    # Create MCP client with environment-based configuration
     mcp_client = StafferMCPClient({
-        'aggregator_path': '/Users/spaceship/project/staffer/mcp-aggregator',
-        'aggregator_config': 'test_config.yaml',
-        'timeout': 10.0
+        'aggregator_path': os.getenv('MCP_AGGREGATOR_PATH', '/Users/spaceship/project/staffer/mcp-aggregator'),
+        'aggregator_config': os.getenv('MCP_AGGREGATOR_CONFIG', 'test_config.yaml'),
+        'timeout': float(os.getenv('MCP_TIMEOUT', '10.0'))
     })
     
     # Discover tools
