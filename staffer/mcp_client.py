@@ -1,27 +1,51 @@
 """
-StafferMCPClient - Simple MCP protocol client for connecting to MCP aggregator.
+StafferMCPClient - MCP protocol client for connecting to MCP aggregator.
 
-Handles MCP protocol communication to discover and execute tools from the aggregator service.
+Uses ADK MCPToolset to properly communicate with MCP servers via stdio protocol.
 """
 import asyncio
-import json
-import aiohttp
+import os
 from typing import List, Dict, Any, Optional
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioServerParameters, StdioConnectionParams
 
 
 class StafferMCPClient:
-    """Client for communicating with MCP aggregator service."""
+    """Client for communicating with MCP aggregator via MCP protocol."""
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize MCP client with connection configuration.
         
         Args:
-            config: Dictionary with 'host', 'port', and optional 'timeout'
+            config: Dictionary with aggregator server configuration
         """
-        self.host = config.get('host', 'localhost')
-        self.port = config.get('port', 8080)
-        self.timeout = config.get('timeout', 5.0)
-        self.base_url = f"http://{self.host}:{self.port}"
+        self.config = config
+        self.aggregator_path = config.get('aggregator_path', '/Users/spaceship/project/staffer/mcp-aggregator')
+        self.aggregator_config = config.get('aggregator_config', 'test_config.yaml')
+        self.timeout = config.get('timeout', 10.0)
+        self.toolset = None
+        
+    async def _ensure_connection(self):
+        """Ensure MCP toolset connection is established."""
+        if self.toolset is None:
+            try:
+                # Create server parameters for MCP aggregator
+                server_params = StdioServerParameters(
+                    command="python3",
+                    args=["server.py", "--config", self.aggregator_config],
+                    cwd=self.aggregator_path
+                )
+                
+                connection_params = StdioConnectionParams(
+                    server_params=server_params
+                )
+                
+                # Create MCPToolset to connect to aggregator
+                self.toolset = MCPToolset(connection_params=connection_params)
+                
+            except Exception as e:
+                print(f"Failed to connect to MCP aggregator: {e}")
+                return False
+        return True
         
     async def list_tools(self) -> List[Dict[str, Any]]:
         """Discover available tools from MCP aggregator.
@@ -30,14 +54,30 @@ class StafferMCPClient:
             List of tool dictionaries with name, description, and optional schema
         """
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
-                async with session.get(f"{self.base_url}/tools") as response:
-                    if response.status == 200:
-                        return await response.json()
-                    else:
-                        # Return empty list on error for graceful fallback
-                        return []
-        except (aiohttp.ClientError, asyncio.TimeoutError):
+            if not await self._ensure_connection():
+                return []
+            
+            # Get tools from MCP aggregator via ADK MCPToolset
+            tools = await self.toolset.get_tools()
+            
+            # Convert ADK tools to dictionary format
+            tool_dicts = []
+            for tool in tools:
+                tool_dict = {
+                    'name': tool.name,
+                    'description': tool.description or f"Tool: {tool.name}"
+                }
+                
+                # Add input schema if available
+                if hasattr(tool, 'input_schema') and tool.input_schema:
+                    tool_dict['inputSchema'] = tool.input_schema()
+                
+                tool_dicts.append(tool_dict)
+            
+            return tool_dicts
+            
+        except Exception as e:
+            print(f"Error listing tools from MCP aggregator: {e}")
             # Graceful fallback when aggregator is unavailable
             return []
     
@@ -51,33 +91,41 @@ class StafferMCPClient:
         Returns:
             Tool execution result in MCP format
         """
-        payload = {
-            "tool_name": tool_name,
-            "arguments": arguments
-        }
-        
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
-                async with session.post(f"{self.base_url}/execute", json=payload) as response:
-                    if response.status == 200:
-                        return await response.json()
-                    else:
-                        # Return error response
-                        return {
-                            "content": [
-                                {"type": "text", "text": f"Error executing tool {tool_name}: HTTP {response.status}"}
-                            ]
-                        }
-        except asyncio.TimeoutError:
+            if not await self._ensure_connection():
+                return {
+                    "content": [
+                        {"type": "text", "text": f"Failed to connect to MCP aggregator for tool {tool_name}"}
+                    ]
+                }
+            
+            # Execute tool via MCP toolset
+            result = await self.toolset.call_tool(tool_name, **arguments)
+            
+            # Convert result to expected format
+            if isinstance(result, str):
+                return {
+                    "content": [
+                        {"type": "text", "text": result}
+                    ]
+                }
+            elif isinstance(result, dict):
+                return {
+                    "content": [
+                        {"type": "text", "text": str(result)}
+                    ]
+                }
+            else:
+                return {
+                    "content": [
+                        {"type": "text", "text": str(result)}
+                    ]
+                }
+                
+        except Exception as e:
             return {
                 "content": [
-                    {"type": "text", "text": f"Timeout executing tool {tool_name}"}
-                ]
-            }
-        except aiohttp.ClientError as e:
-            return {
-                "content": [
-                    {"type": "text", "text": f"Connection error executing tool {tool_name}: {e}"}
+                    {"type": "text", "text": f"Error executing tool {tool_name}: {e}"}
                 ]
             }
     
@@ -107,3 +155,12 @@ class StafferMCPClient:
                 {"type": "text", "text": f"Tool {tool_name} execution timed out"}
             ]
         }
+    
+    async def close(self):
+        """Close the MCP connection."""
+        if self.toolset:
+            try:
+                # MCPToolset should handle cleanup automatically
+                self.toolset = None
+            except Exception as e:
+                print(f"Error closing MCP connection: {e}")

@@ -67,11 +67,11 @@ def _discover_mcp_tools():
 
 async def _async_discover_mcp_tools():
     """Async helper to discover MCP tools."""
-    # Create MCP client with default configuration
+    # Create MCP client with aggregator configuration
     mcp_client = StafferMCPClient({
-        'host': 'localhost',
-        'port': 8080,
-        'timeout': 5.0
+        'aggregator_path': '/Users/spaceship/project/staffer/mcp-aggregator',
+        'aggregator_config': 'test_config.yaml',
+        'timeout': 10.0
     })
     
     # Discover tools
