@@ -63,9 +63,9 @@ def load_config(config_path: str = "aggregation.yaml") -> AggregatorConfig:
         source_servers.append(server_config)
     
     return AggregatorConfig(
-        domain=config_data['domain'],
-        model=config_data['model'],
-        instruction=config_data['instruction'],
+        domain=config_data.get('domain', ''),
+        model=config_data.get('model', ''),
+        instruction=config_data.get('instruction', ''),
         source_servers=source_servers,
         tool_selection=config_data.get('tool_selection', {}),
         server=config_data.get('server', {})
