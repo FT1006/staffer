@@ -21,8 +21,11 @@ class MCPAggregatorServer:
         if config_path is None:
             config_path = "aggregation.yaml"
         
+        # Resolve config path relative to server.py if not absolute
+        resolved_config_path = self._resolve_config_path(config_path)
+        
         # Load and validate configuration
-        self.config = load_config(config_path)
+        self.config = load_config(resolved_config_path)
         validation_issues = validate_config(self.config)
         
         if validation_issues:
@@ -36,6 +39,34 @@ class MCPAggregatorServer:
         # Setup logging
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
+    
+    def _resolve_config_path(self, config_path: str) -> str:
+        """Resolve config path relative to server.py location if not absolute."""
+        config_path_obj = Path(config_path)
+        
+        # If already absolute, use as-is
+        if config_path_obj.is_absolute():
+            return config_path
+        
+        # If relative, resolve relative to server.py directory
+        server_dir = Path(__file__).parent
+        resolved_path = server_dir / config_path
+        
+        # If the resolved path exists, use it
+        if resolved_path.exists():
+            return str(resolved_path)
+        
+        # Otherwise, try the original path (current working directory)
+        if config_path_obj.exists():
+            return config_path
+        
+        # If neither exists, provide helpful error message
+        raise FileNotFoundError(
+            f"Configuration file not found: '{config_path}'\n"
+            f"Searched in:\n"
+            f"  - {resolved_path} (relative to server.py)\n"
+            f"  - {config_path_obj.absolute()} (current directory)"
+        )
     
     def _convert_config_to_dict(self) -> dict:
         """Convert AggregatorConfig to dict format for composer."""
