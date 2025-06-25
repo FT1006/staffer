@@ -88,13 +88,21 @@ class MCPAggregatorServer:
         }
     
     async def get_tools(self) -> List[Any]:
-        """Get aggregated tools from all configured servers."""
+        """Get aggregated tools from all configured servers with graceful fallback."""
         try:
             tools = await self.composer.get_all_tools()
-            self.logger.info(f"Successfully aggregated {len(tools)} tools from available servers")
+            
+            # Log detailed results including any failed servers
+            if hasattr(self.composer, 'failed_servers') and self.composer.failed_servers:
+                self.logger.warning(f"Some servers failed: {self.composer.failed_servers}")
+                self.logger.info(f"Successfully aggregated {len(tools)} tools from {len(self.config.available_servers) - len(self.composer.failed_servers)} working servers")
+            else:
+                self.logger.info(f"Successfully aggregated {len(tools)} tools from all {len(self.config.available_servers)} available servers")
+            
             return tools
         except Exception as e:
             self.logger.error(f"Failed to aggregate tools: {e}")
+            # Return empty list to ensure graceful degradation
             return []
     
     def start(self):

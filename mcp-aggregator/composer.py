@@ -83,30 +83,41 @@ class GenericMCPServerComposer:
         return [tool_info['tool'] for tool_info in all_tools.values()]
     
     async def _discover_tools_from_server(self, server_config) -> List[Any]:
-        """Discover tools from a single server."""
-        # This method is mocked in tests - implement basic functionality
-        if hasattr(server_config, 'tools'):
-            # Test configuration with direct tools
-            return server_config.tools
-        
-        # Real server configuration - use discovery engine
-        if isinstance(server_config, dict):
-            # Convert dict to ServerConfig-like object for testing
-            class MockServerConfig:
-                def __init__(self, config_dict):
-                    self.name = config_dict.get('name', 'unknown')
-                    self.priority = config_dict.get('priority', 1)
-                    self.tools = config_dict.get('tools', [])
-                    
-            mock_config = MockServerConfig(server_config)
-            return mock_config.tools
-        
-        # For actual ServerConfig objects, use the discovery engine
-        if isinstance(server_config, ServerConfig):
-            tools_dict = await self.discovery_engine._discover_server_tools(server_config)
-            return list(tools_dict.values())
-        
-        return []
+        """Discover tools from a single server with graceful error handling."""
+        try:
+            # This method is mocked in tests - implement basic functionality
+            if hasattr(server_config, 'tools'):
+                # Test configuration with direct tools
+                return server_config.tools
+            
+            # Real server configuration - use discovery engine
+            if isinstance(server_config, dict):
+                # Convert dict to ServerConfig-like object for testing
+                class MockServerConfig:
+                    def __init__(self, config_dict):
+                        self.name = config_dict.get('name', 'unknown')
+                        self.priority = config_dict.get('priority', 1)
+                        self.tools = config_dict.get('tools', [])
+                        
+                mock_config = MockServerConfig(server_config)
+                return mock_config.tools
+            
+            # For actual ServerConfig objects, use the discovery engine
+            if isinstance(server_config, ServerConfig):
+                tools_dict = await self.discovery_engine._discover_server_tools(server_config)
+                return list(tools_dict.values())
+            
+            return []
+            
+        except (ConnectionError, TimeoutError, OSError) as e:
+            # Re-raise connection errors to be handled by caller
+            # This allows graceful fallback at the aggregation level
+            raise e
+        except Exception as e:
+            # Log unexpected errors but don't crash the entire aggregation
+            server_name = getattr(server_config, 'name', 'unknown') if hasattr(server_config, 'name') else server_config.get('name', 'unknown')
+            print(f"Warning: Unexpected error discovering tools from {server_name}: {e}")
+            return []
     
     async def _discover_and_convert_tools(self, server_config) -> tuple:
         """Discover and convert tools from a single server concurrently."""
