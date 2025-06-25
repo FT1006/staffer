@@ -50,18 +50,35 @@ def _discover_mcp_tools():
     Returns:
         List of types.FunctionDeclaration objects for MCP tools
     """
-    try:
-        # Try to get current event loop
+    import threading
+    import queue
+    
+    def _run_discovery():
+        """Run MCP discovery in separate thread."""
         try:
-            loop = asyncio.get_running_loop()
-            # If we're already in an event loop, we can't run another one
-            # Return empty list for now - this is a limitation we'd need to address
-            return []
-        except RuntimeError:
-            # No event loop running, we can create a new one
             return asyncio.run(_async_discover_mcp_tools())
-    except Exception:
-        # Graceful fallback when MCP discovery fails
+        except Exception as e:
+            print(f"MCP tool discovery failed: {e}")
+            return []
+    
+    # Use thread to avoid event loop conflicts
+    result_queue = queue.Queue()
+    
+    def thread_worker():
+        result = _run_discovery()
+        result_queue.put(result)
+    
+    thread = threading.Thread(target=thread_worker)
+    thread.start()
+    thread.join(timeout=10)  # 10 second timeout for discovery
+    
+    if thread.is_alive():
+        print("MCP tool discovery timed out")
+        return []
+    
+    try:
+        return result_queue.get_nowait()
+    except queue.Empty:
         return []
 
 
@@ -109,6 +126,7 @@ def call_function(function_call_part, working_directory, verbose=False):
     args = function_call_part.args or {}
     function_name = function_call_part.name.lower()
 
+    # Built-in function registry
     function_dict = {
         "get_files_info": get_files_info,
         "get_file_content": get_file_content,
@@ -117,25 +135,104 @@ def call_function(function_call_part, working_directory, verbose=False):
         "get_working_directory": get_working_directory
     }
 
-    if function_name not in function_dict:
+    # First, try built-in functions
+    if function_name in function_dict:
+        function_result = function_dict[function_name](working_directory, **args)
         return types.Content(
             role="tool",
             parts=[
                 types.Part.from_function_response(
                     name=function_name,
-                    response={"error": f"Unknown function: {function_name}"},
+                    response={"result": function_result},
                 )
             ],
         )
     
-    function_result = function_dict[function_name](working_directory, **args)
-
-    return types.Content(
-    role="tool",
-    parts=[
-        types.Part.from_function_response(
-            name=function_name,
-            response={"result": function_result},
+    # If not built-in, try MCP tools
+    mcp_result = None
+    mcp_error = None
+    
+    try:
+        mcp_result = _call_mcp_tool(function_call_part.name, args)
+    except Exception as e:
+        mcp_error = str(e)
+    
+    if mcp_result:
+        return types.Content(
+            role="tool",
+            parts=[
+                types.Part.from_function_response(
+                    name=function_name,
+                    response={"result": mcp_result},
+                )
+            ],
         )
-    ],
-)
+    
+    # Neither built-in nor MCP tool found - provide helpful error
+    error_msg = f"Unknown function: {function_name}"
+    if mcp_error:
+        error_msg += f" (MCP error: {mcp_error})"
+    elif mcp_result is None:
+        error_msg += " (MCP aggregator not available)"
+    
+    if verbose:
+        print(f"Function execution failed: {error_msg}")
+    
+    return types.Content(
+        role="tool",
+        parts=[
+            types.Part.from_function_response(
+                name=function_name,
+                response={"error": error_msg},
+            )
+        ],
+    )
+
+
+def _call_mcp_tool(tool_name: str, arguments: dict):
+    """Execute MCP tool through StafferMCPClient.
+    
+    Returns:
+        Tool result or None if tool not available
+    """
+    import os
+    import threading
+    import queue
+    
+    # Create MCP client with environment-based configuration
+    mcp_client = StafferMCPClient({
+        'aggregator_path': os.getenv('MCP_AGGREGATOR_PATH', '/Users/spaceship/project/staffer/mcp-aggregator'),
+        'aggregator_config': os.getenv('MCP_AGGREGATOR_CONFIG', 'test_config.yaml'),
+        'timeout': float(os.getenv('MCP_TIMEOUT', '10.0'))
+    })
+    
+    # Handle async execution regardless of current event loop state
+    def _run_mcp_tool():
+        """Run MCP tool in separate thread to avoid event loop conflicts."""
+        try:
+            return asyncio.run(mcp_client.call_tool(tool_name, arguments))
+        except Exception as e:
+            return {"error": str(e)}
+    
+    # Execute in separate thread to avoid event loop conflicts
+    result_queue = queue.Queue()
+    
+    def thread_worker():
+        result = _run_mcp_tool()
+        result_queue.put(result)
+    
+    thread = threading.Thread(target=thread_worker)
+    thread.start()
+    thread.join(timeout=15)  # 15 second timeout
+    
+    if thread.is_alive():
+        # Timeout occurred
+        return {"error": "MCP tool execution timed out"}
+    
+    try:
+        result = result_queue.get_nowait()
+        if isinstance(result, dict) and "error" in result:
+            return None  # Will be handled as failure
+        return result
+    except queue.Empty:
+        return None

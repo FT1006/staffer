@@ -25,15 +25,15 @@ def tool_resp(name, result):
     )
 
 
-def function_call(name, arguments=None):
+def function_call(name, args=None):
     """Create a model message with function call."""
-    if arguments is None:
-        arguments = "{}"
+    if args is None:
+        args = {}
     return types.Content(
         role="model",
         parts=[types.Part(function_call=types.FunctionCall(
             name=name, 
-            arguments=arguments
+            args=args
         ))]
     )
 
