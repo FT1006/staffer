@@ -25,26 +25,41 @@ class GenericMCPServerComposer:
         if not server_configs:
             return []
         
-        # Use discovery engine to find tools from all servers
+        # Use discovery engine to find tools from all servers concurrently
         all_tools = {}
         
+        # Create discovery tasks for concurrent execution
+        discovery_tasks = []
         for server_config in server_configs:
-            try:
-                adk_tools = await self._discover_tools_from_server(server_config)
+            discovery_tasks.append(self._discover_and_convert_tools(server_config))
+        
+        # Execute all discovery tasks concurrently
+        if discovery_tasks:
+            results = await asyncio.gather(*discovery_tasks, return_exceptions=True)
+            
+            # Process results and handle conflicts
+            for i, result in enumerate(results):
+                server_config = server_configs[i]
                 
-                # Convert ADK tools to GenAI format using translator
-                genai_tools = self._convert_adk_tools_to_genai(adk_tools)
+                if isinstance(result, Exception):
+                    # Handle server failure
+                    if isinstance(server_config, dict):
+                        server_name = server_config.get('name', 'unknown')
+                    else:
+                        server_name = getattr(server_config, 'name', 'unknown')
+                    self.failed_servers.append(server_name)
+                    self.server_failures.append({
+                        'server': server_name,
+                        'error': str(result)
+                    })
+                    continue
+                
+                # Process successful results
+                genai_tools, server_priority, server_name = result
                 
                 # Handle conflict resolution by priority
                 for genai_tool in genai_tools:
                     tool_name = genai_tool.name
-                    # Handle both dict and object server configs
-                    if isinstance(server_config, dict):
-                        server_priority = server_config.get('priority', 1)
-                        server_name = server_config.get('name', 'unknown')
-                    else:
-                        server_priority = getattr(server_config, 'priority', 1)
-                        server_name = getattr(server_config, 'name', 'unknown')
                     
                     if tool_name in all_tools:
                         # Conflict detected - use priority to resolve
@@ -63,20 +78,6 @@ class GenericMCPServerComposer:
                             'priority': server_priority,
                             'source': server_name
                         }
-                        
-            except Exception as e:
-                # Gracefully handle server failures
-                if isinstance(server_config, dict):
-                    server_name = server_config.get('name', 'unknown')
-                else:
-                    server_name = getattr(server_config, 'name', 'unknown')
-                self.failed_servers.append(server_name)
-                self.server_failures.append({
-                    'server': server_name,
-                    'error': str(e)
-                })
-                # Continue with other servers
-                continue
         
         # Return just the tools (not the metadata) in GenAI format
         return [tool_info['tool'] for tool_info in all_tools.values()]
@@ -106,6 +107,24 @@ class GenericMCPServerComposer:
             return list(tools_dict.values())
         
         return []
+    
+    async def _discover_and_convert_tools(self, server_config) -> tuple:
+        """Discover and convert tools from a single server concurrently."""
+        # Discover ADK tools from server
+        adk_tools = await self._discover_tools_from_server(server_config)
+        
+        # Convert to GenAI format
+        genai_tools = self._convert_adk_tools_to_genai(adk_tools)
+        
+        # Extract server metadata
+        if isinstance(server_config, dict):
+            server_priority = server_config.get('priority', 1)
+            server_name = server_config.get('name', 'unknown')
+        else:
+            server_priority = getattr(server_config, 'priority', 1)
+            server_name = getattr(server_config, 'name', 'unknown')
+        
+        return genai_tools, server_priority, server_name
     
     def _convert_adk_tools_to_genai(self, adk_tools: List[Any]) -> List[Any]:
         """Convert ADK tools to GenAI format using translator."""
