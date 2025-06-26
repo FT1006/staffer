@@ -36,7 +36,6 @@ class AggregatorConfig:
     instruction: str
     source_servers: List[ServerConfig]
     tool_selection: Dict[str, Any]
-    server: Optional[Dict[str, Any]] = None
     
     @property
     def available_servers(self) -> List[ServerConfig]:
@@ -110,8 +109,7 @@ def load_config(config_path: str = "aggregation.yaml") -> AggregatorConfig:
         model=config_data.get('model', ''),
         instruction=config_data.get('instruction', ''),
         source_servers=source_servers,
-        tool_selection=config_data.get('tool_selection', {}),
-        server=config_data.get('server') if 'server' in config_data else None
+        tool_selection=config_data.get('tool_selection', {})
     )
 
 
@@ -136,3 +134,47 @@ def validate_config(config: AggregatorConfig) -> List[str]:
             issues.append(f"Server '{server.name}' is enabled but {server.cwd_env} environment variable not set")
     
     return issues
+
+
+def normalize_config_dict(config_dict: Dict[str, Any]) -> AggregatorConfig:
+    """Normalize a configuration dictionary to AggregatorConfig.
+    
+    This function ensures all parts of mcp-aggregator work with the same
+    standardized configuration format (AggregatorConfig with ServerConfig objects).
+    
+    Args:
+        config_dict: Raw configuration dictionary
+        
+    Returns:
+        AggregatorConfig with properly typed ServerConfig objects
+    """
+    # Handle source_servers conversion
+    source_servers = []
+    for server_data in config_dict.get('source_servers', []):
+        if isinstance(server_data, ServerConfig):
+            # Already a ServerConfig, use as-is
+            source_servers.append(server_data)
+        elif isinstance(server_data, dict):
+            # Convert dict to ServerConfig
+            server_config = ServerConfig(
+                name=server_data.get('name', 'unknown'),
+                command=server_data.get('command', ''),
+                args=server_data.get('args', []),
+                cwd_env=server_data.get('cwd_env', ''),
+                tool_filter=server_data.get('tool_filter'),
+                priority=server_data.get('priority', 1),
+                enabled=server_data.get('enabled', True)
+            )
+            source_servers.append(server_config)
+        else:
+            # Skip invalid server configs (None, strings, numbers, etc.)
+            continue
+    
+    # Create AggregatorConfig with defaults for missing fields
+    return AggregatorConfig(
+        domain=config_dict.get('domain', ''),
+        model=config_dict.get('model', ''),
+        instruction=config_dict.get('instruction', ''),
+        source_servers=source_servers,
+        tool_selection=config_dict.get('tool_selection', {})
+    )

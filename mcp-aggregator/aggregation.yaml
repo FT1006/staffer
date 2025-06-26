@@ -23,8 +23,3 @@ tool_selection:
   strategy: "curated"
   exclude_patterns: ["debug_", "internal_", "test_"]
   max_tools_per_server: 20
-
-server:
-  host: "localhost"
-  port: 8080
-  name: "staffer-tool-aggregator"

@@ -1,5 +1,6 @@
 """GenericMCPServerComposer for aggregating tools from multiple MCP servers."""
 import asyncio
+import os
 from typing import Dict, List, Any, Optional
 from config import ServerConfig, AggregatorConfig
 from discovery import ToolDiscoveryEngine
@@ -11,8 +12,14 @@ class GenericMCPServerComposer:
     """Composes tools from multiple MCP servers with conflict resolution and graceful failure handling."""
     
     def __init__(self, config: Dict[str, Any]):
-        """Initialize composer with configuration."""
-        self.config = config
+        """Initialize composer with configuration.
+        
+        Args:
+            config: Configuration dict that will be normalized to AggregatorConfig
+        """
+        # Normalize configuration to standard format
+        from config import normalize_config_dict
+        self.config = normalize_config_dict(config)
         self.failed_servers = []
         self.server_failures = []  # Track failures for monitoring
         self.discovery_engine = ToolDiscoveryEngine()
@@ -53,11 +60,8 @@ class GenericMCPServerComposer:
                 server_config = server_configs[i]
                 
                 if isinstance(result, Exception):
-                    # Handle server failure
-                    if isinstance(server_config, dict):
-                        server_name = server_config.get('name', 'unknown')
-                    else:
-                        server_name = getattr(server_config, 'name', 'unknown')
+                    # Handle server failure (config normalization ensures ServerConfig objects)
+                    server_name = server_config.name
                     self.failed_servers.append(server_name)
                     self.server_failures.append({
                         'server': server_name,
@@ -126,8 +130,7 @@ class GenericMCPServerComposer:
             raise e
         except Exception as e:
             # Log unexpected errors but don't crash the entire aggregation
-            server_name = getattr(server_config, 'name', 'unknown') if hasattr(server_config, 'name') else server_config.get('name', 'unknown')
-            print(f"Warning: Unexpected error discovering tools from {server_name}: {e}")
+            print(f"Warning: Unexpected error discovering tools from {server_config.name}: {e}")
             return []
     
     async def _discover_and_convert_tools(self, server_config) -> tuple:
@@ -138,13 +141,9 @@ class GenericMCPServerComposer:
         # Convert to GenAI format
         genai_tools = self._convert_adk_tools_to_genai(adk_tools)
         
-        # Extract server metadata
-        if isinstance(server_config, dict):
-            server_priority = server_config.get('priority', 1)
-            server_name = server_config.get('name', 'unknown')
-        else:
-            server_priority = getattr(server_config, 'priority', 1)
-            server_name = getattr(server_config, 'name', 'unknown')
+        # Extract server metadata (config normalization ensures ServerConfig objects)
+        server_priority = server_config.priority
+        server_name = server_config.name
         
         return genai_tools, server_priority, server_name
     
@@ -186,8 +185,57 @@ class GenericMCPServerComposer:
             )
         )
     
-    def _extract_server_configs(self) -> List[Any]:
-        """Extract server configurations from the config."""
-        if 'source_servers' in self.config:
-            return self.config['source_servers']
-        return []
+    def _extract_server_configs(self) -> List[ServerConfig]:
+        """Extract server configurations from the normalized config."""
+        return self.config.source_servers
+    
+    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        """Execute a tool by name with the given arguments.
+        
+        This method finds which server provides the tool and executes it directly
+        using the ADK tool's run_async method as documented in MCP_INTEGRATION_SUCCESS_STORY.
+        
+        Args:
+            tool_name: Name of the tool to execute
+            arguments: Dictionary of arguments to pass to the tool
+            
+        Returns:
+            Tool execution result
+            
+        Raises:
+            ValueError: If tool is not found
+            Exception: If tool execution fails
+        """
+        # Get server configurations
+        server_configs = self._extract_server_configs()
+        
+        # Find which server has this tool
+        for server_config in server_configs:
+            # Check if server is available (config normalization ensures ServerConfig objects)
+            if not server_config.is_available:
+                continue
+                    
+            # Discover tools from this server
+            try:
+                tools_dict = await self.discovery_engine._discover_server_tools(server_config)
+                
+                # Check if this server has the requested tool
+                if tool_name in tools_dict:
+                    adk_tool = tools_dict[tool_name]
+                    
+                    # Execute the tool directly using ADK's run_async method
+                    # This is the documented pattern from MCP_INTEGRATION_SUCCESS_STORY
+                    result = await adk_tool.run_async(
+                        args=arguments,
+                        tool_context=None
+                    )
+                    
+                    return result
+                    
+            except Exception as e:
+                # Log error but continue checking other servers
+                print(f"Error checking server {server_config.name} for tool {tool_name}: {e}")
+                continue
+        
+        # Tool not found in any server
+        raise ValueError(f"Tool '{tool_name}' not found in any configured MCP server")

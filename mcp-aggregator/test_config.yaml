@@ -31,8 +31,3 @@ tool_selection:
   strategy: "curated"
   exclude_patterns: ["debug_", "internal_", "test_"]
   max_tools_per_server: 5  # Lower for testing
-
-server:
-  host: "localhost"
-  port: 8081  # Different port from production
-  name: "test-staffer-tool-aggregator"
