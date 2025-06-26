@@ -80,10 +80,6 @@ def _get_mcp_tool_declarations():
         return []
     
     try:
-        # Get default config path
-        config_path = os.getenv('MCP_CONFIG_PATH', 
-                              os.path.join(os.path.dirname(__file__), '..', 'mcp-aggregator', 'production.yaml'))
-        
         # Get MCP tools via composer with quiet operation
         def _run_discovery():
             try:
@@ -93,7 +89,7 @@ def _get_mcp_tool_declarations():
                 import sys
                 with contextlib.redirect_stderr(open(os.devnull, 'w')), \
                      contextlib.redirect_stdout(open(os.devnull, 'w')):
-                    result = asyncio.run(_async_get_mcp_tools(config_path))
+                    result = asyncio.run(_async_get_mcp_tools())
                 return result
             except Exception as e:
                 print(f"\nMCP tool discovery failed: {e}")
@@ -144,10 +140,15 @@ def _get_mcp_tool_declarations():
         return []
 
 
-async def _async_get_mcp_tools(config_path):
+async def _async_get_mcp_tools():
     """Async helper to get MCP tools from composer."""
-    # Initialize composer
-    composer = GenericMCPServerComposer.from_config(config_path)
+    # Initialize composer (MCP aggregator handles its own configuration)
+    from config import load_config
+    aggregator_config = load_config()  # Uses MCP's own default config
+    config_dict = {
+        'source_servers': aggregator_config.source_servers
+    }
+    composer = GenericMCPServerComposer(config_dict)
     
     # Get all tools from MCP servers 
     genai_tools = await composer.get_all_tools()
@@ -250,10 +251,6 @@ def _call_mcp_tool_via_composer(tool_name: str, arguments: dict):
         return None
     
     try:
-        # Get config path
-        config_path = os.getenv('MCP_CONFIG_PATH', 
-                              os.path.join(os.path.dirname(__file__), '..', 'mcp-aggregator', 'production.yaml'))
-        
         # Strategy: Use tool-specific path handling with graceful fallback
         working_dir = os.getcwd()
         
@@ -266,7 +263,7 @@ def _call_mcp_tool_via_composer(tool_name: str, arguments: dict):
         def _run_mcp_tool_with_args(args_to_use):
             """Run MCP tool via composer with given arguments."""
             try:
-                return asyncio.run(_async_call_mcp_tool(config_path, tool_name, args_to_use))
+                return asyncio.run(_async_call_mcp_tool(tool_name, args_to_use))
             except Exception as e:
                 return {"error": str(e)}
         
@@ -317,10 +314,15 @@ def _call_mcp_tool_via_composer(tool_name: str, arguments: dict):
         return None
 
 
-async def _async_call_mcp_tool(config_path: str, tool_name: str, arguments: dict):
+async def _async_call_mcp_tool(tool_name: str, arguments: dict):
     """Async helper to execute MCP tool via composer."""
-    # Initialize composer
-    composer = GenericMCPServerComposer.from_config(config_path)
+    # Initialize composer (MCP aggregator handles its own configuration)
+    from config import load_config
+    aggregator_config = load_config()  # Uses MCP's own default config
+    config_dict = {
+        'source_servers': aggregator_config.source_servers
+    }
+    composer = GenericMCPServerComposer(config_dict)
     
     # Execute tool
     result = await composer.call_tool(tool_name, arguments)
