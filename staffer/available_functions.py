@@ -1,12 +1,24 @@
 from google.genai import types
 import asyncio
+import os
+import threading
+import queue
 
 from .functions.get_files_info import schema_get_files_info, get_files_info
 from .functions.get_file_content import schema_get_file_content, get_file_content
 from .functions.write_file import schema_write_file, write_file
 from .functions.run_python_file import schema_run_python_file, run_python_file
 from .functions.get_working_directory import schema_get_working_directory, get_working_directory
-from .mcp_client import StafferMCPClient
+
+# Import MCP aggregator components
+try:
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'mcp-aggregator'))
+    from composer import GenericMCPServerComposer
+    from adk_translator import HybridToolToGenAIConverter
+except ImportError:
+    GenericMCPServerComposer = None
+    HybridToolToGenAIConverter = None
 
 
 available_functions = types.Tool(
@@ -20,91 +32,93 @@ available_functions = types.Tool(
 )
 
 def get_available_functions(working_dir):
-    return available_functions
-
-
-def get_available_functions_with_mcp(working_dir):
-    """Merge built-in functions with MCP-discovered tools.
+    """Get all available functions - built-in and MCP tools.
     
     Args:
-        working_dir: Current working directory (not used but kept for compatibility)
+        working_dir: Current working directory
         
     Returns:
         types.Tool with combined function declarations
     """
-    # Get built-in functions
+    # Get built-in function declarations
     built_in_declarations = list(available_functions.function_declarations)
     
-    # Discover MCP tools
-    mcp_declarations = _discover_mcp_tools()
+    # Get MCP tool declarations
+    mcp_declarations = _get_mcp_tool_declarations()
     
-    # Combine both
+    # Combine and return
     combined_declarations = built_in_declarations + mcp_declarations
-    
     return types.Tool(function_declarations=combined_declarations)
 
 
-def _discover_mcp_tools():
-    """Discover tools from MCP aggregator and convert to GenAI format.
+def _get_mcp_tool_declarations():
+    """Get MCP tool declarations from composer.
     
     Returns:
-        List of types.FunctionDeclaration objects for MCP tools
+        List of types.FunctionDeclaration for MCP tools
     """
-    import threading
-    import queue
-    
-    def _run_discovery():
-        """Run MCP discovery in separate thread."""
-        try:
-            return asyncio.run(_async_discover_mcp_tools())
-        except Exception as e:
-            print(f"MCP tool discovery failed: {e}")
-            return []
-    
-    # Use thread to avoid event loop conflicts
-    result_queue = queue.Queue()
-    
-    def thread_worker():
-        result = _run_discovery()
-        result_queue.put(result)
-    
-    thread = threading.Thread(target=thread_worker)
-    thread.start()
-    thread.join(timeout=10)  # 10 second timeout for discovery
-    
-    if thread.is_alive():
-        print("MCP tool discovery timed out")
+    # Skip MCP integration if components not available
+    if not GenericMCPServerComposer or not HybridToolToGenAIConverter:
         return []
     
     try:
-        return result_queue.get_nowait()
-    except queue.Empty:
+        # Get default config path
+        config_path = os.getenv('MCP_CONFIG_PATH', 
+                              os.path.join(os.path.dirname(__file__), '..', 'mcp-aggregator', 'production.yaml'))
+        
+        # Get MCP tools via composer
+        def _run_discovery():
+            try:
+                return asyncio.run(_async_get_mcp_tools(config_path))
+            except Exception as e:
+                print(f"MCP tool discovery failed: {e}")
+                return []
+        
+        # Use thread to avoid event loop conflicts
+        result_queue = queue.Queue()
+        
+        def thread_worker():
+            result = _run_discovery()
+            result_queue.put(result)
+        
+        thread = threading.Thread(target=thread_worker)
+        thread.start()
+        thread.join(timeout=5)  # 5 second timeout
+        
+        if thread.is_alive():
+            print("MCP tool discovery timed out")
+            return []
+        
+        try:
+            return result_queue.get_nowait()
+        except queue.Empty:
+            return []
+            
+    except Exception as e:
+        print(f"MCP integration error: {e}")
         return []
 
 
-async def _async_discover_mcp_tools():
-    """Async helper to discover MCP tools."""
-    import os
+async def _async_get_mcp_tools(config_path):
+    """Async helper to get MCP tools from composer."""
+    # Initialize composer
+    composer = GenericMCPServerComposer.from_config(config_path)
     
-    # Create MCP client with environment-based configuration
-    mcp_client = StafferMCPClient({
-        'aggregator_path': os.getenv('MCP_AGGREGATOR_PATH', '/Users/spaceship/project/staffer/mcp-aggregator'),
-        'aggregator_config': os.getenv('MCP_AGGREGATOR_CONFIG', 'test_config.yaml'),
-        'timeout': float(os.getenv('MCP_TIMEOUT', '10.0'))
-    })
+    # Get all tools from MCP servers
+    tools = await composer.get_all_tools()
     
-    # Discover tools
-    mcp_tools = await mcp_client.list_tools()
+    # Convert to GenAI format
+    converter = HybridToolToGenAIConverter()
+    genai_tools = converter.convert_to_genai_tools(tools)
     
-    # Convert to GenAI function declarations
+    # Convert to function declarations
     declarations = []
-    for tool in mcp_tools:
+    for tool_dict in genai_tools:
         try:
-            # Create function declaration from MCP tool
             func_decl = types.FunctionDeclaration(
-                name=tool['name'],
-                description=tool.get('description', f"MCP tool: {tool['name']}"),
-                parameters=tool.get('inputSchema', {
+                name=tool_dict["name"],
+                description=tool_dict.get("description", f"MCP tool: {tool_dict['name']}"),
+                parameters=tool_dict.get("parameters", {
                     "type": "object",
                     "properties": {},
                     "required": []
@@ -116,6 +130,9 @@ async def _async_discover_mcp_tools():
             continue
     
     return declarations
+
+
+# Remove old MCP client code since we're using composer directly
 
 def call_function(function_call_part, working_directory, verbose=False):
     if verbose:
