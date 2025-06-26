@@ -45,23 +45,21 @@ class TestProductionConfigurability:
             "Production config should not reference port (STDIO protocol)"
     
     def test_production_config_loads_without_server_section(self):
-        """RED: Test that production config loads successfully without server section."""
+        """Test that production config loads successfully without server section."""
         production_config_path = Path(__file__).parent.parent / "production.yaml"
         
         if not production_config_path.exists():
             pytest.skip("production.yaml not created yet")
             
-        # Test with no environment variables set
-        with patch.dict(os.environ, {}, clear=True):
-            # Should load successfully with STDIO config
-            config = load_config(str(production_config_path))
-            
-            # Should NOT have server section for STDIO protocol
-            assert config.server is None, \
-                "Production config should not have server settings for STDIO protocol"
+        # Should load successfully with STDIO config
+        config = load_config(str(production_config_path))
+        
+        # Should NOT have server attribute for STDIO protocol
+        assert not hasattr(config, 'server') or config.__dict__.get('server') is None, \
+            "Production config should not have server settings for STDIO protocol"
     
-    def test_mcp_server_paths_are_configurable(self):
-        """RED: Test that MCP server paths come from environment variables."""
+    def test_mcp_server_paths_use_direct_configuration(self):
+        """Test that MCP server paths use direct YAML configuration (single source of truth)."""
         production_config_path = Path(__file__).parent.parent / "production.yaml"
         
         if not production_config_path.exists():
@@ -69,14 +67,11 @@ class TestProductionConfigurability:
             
         config = load_config(str(production_config_path))
         
-        # All servers should depend on environment variables for paths
+        # All servers should have direct paths in YAML (not environment variables)
         for server in config.source_servers:
-            assert server.cwd_env is not None, f"Server {server.name} should have cwd_env set"
-            assert len(server.cwd_env) > 0, f"Server {server.name} should specify environment variable"
-            
-            # Environment variable should follow naming convention
-            assert server.cwd_env.endswith("_PATH") or server.cwd_env.endswith("_DIR"), \
-                f"Server {server.name} env var {server.cwd_env} should follow PATH/DIR convention"
+            assert server.cwd is not None, f"Server {server.name} should have direct cwd path"
+            assert len(server.cwd) > 0, f"Server {server.name} should specify direct path"
+            assert server.cwd.startswith("/"), f"Server {server.name} should use absolute path"
     
     def test_tool_discovery_supports_multiple_strategies(self):
         """RED: Test that configuration supports flexible tool discovery."""
@@ -97,31 +92,22 @@ class TestProductionConfigurability:
             f"Tool selection strategy should be one of {valid_strategies}"
     
     def test_stdio_configuration_adapts_to_different_environments(self):
-        """RED: Test that STDIO config works across dev/staging/production environments."""
+        """Test that STDIO config works with direct YAML configuration."""
         production_config_path = Path(__file__).parent.parent / "production.yaml"
         
         if not production_config_path.exists():
             pytest.skip("production.yaml not created yet")
             
-        # Test development environment (STDIO only)
-        with patch.dict(os.environ, {
-            'EXCEL_MCP_PATH': '/dev/excel-server',
-            'ANALYTICS_MCP_PATH': '/dev/analytics-server'
-        }):
-            dev_config = load_config(str(production_config_path))
-            # Should work in development with STDIO
-            assert len(dev_config.source_servers) > 0
-            assert dev_config.server is None  # No server section for STDIO
+        # Load config with direct YAML configuration
+        config = load_config(str(production_config_path))
         
-        # Test production environment (STDIO only)
-        with patch.dict(os.environ, {
-            'EXCEL_MCP_PATH': '/opt/excel-server',
-            'ANALYTICS_MCP_PATH': '/opt/analytics-server'
-        }):
-            prod_config = load_config(str(production_config_path))
-            # Should work in production with STDIO
-            assert len(prod_config.source_servers) > 0
-            assert prod_config.server is None  # No server section for STDIO
+        # Should work with STDIO protocol using direct paths
+        assert len(config.source_servers) > 0
+        assert not hasattr(config, 'server') or config.__dict__.get('server') is None  # No server section for STDIO
+        
+        # All servers should have direct paths configured
+        for server in config.source_servers:
+            assert server.cwd is not None, f"Server {server.name} should have direct path"
     
     def test_stdio_environment_variable_documentation_exists(self):
         """RED: Test that STDIO environment variables are documented for deployment."""

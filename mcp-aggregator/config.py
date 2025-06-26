@@ -18,6 +18,8 @@ class ServerConfig:
     enabled: bool = True
     # Keep backward compatibility with cwd_env for migration
     cwd_env: Optional[str] = None
+    # Additional fields for server-specific configuration (e.g., API keys)
+    api_key: Optional[str] = None
     
     def __post_init__(self):
         """Handle backward compatibility and direct path resolution."""
@@ -42,6 +44,7 @@ class AggregatorConfig:
     instruction: str
     source_servers: List[ServerConfig]
     tool_selection: Dict[str, Any]
+    # NOTE: No 'server' field - MCP uses STDIO protocol only, no HTTP server config needed
     
     @property
     def available_servers(self) -> List[ServerConfig]:
@@ -113,7 +116,8 @@ def load_config(config_path: str = "aggregation.yaml") -> AggregatorConfig:
                 cwd=server_data['cwd'],
                 tool_filter=server_data.get('tool_filter'),
                 priority=server_data.get('priority', 1),
-                enabled=server_data.get('enabled', True)
+                enabled=server_data.get('enabled', True),
+                api_key=server_data.get('api_key')
             )
         elif 'cwd_env' in server_data:
             # Backward compatibility with environment variables
@@ -125,7 +129,8 @@ def load_config(config_path: str = "aggregation.yaml") -> AggregatorConfig:
                 cwd_env=server_data['cwd_env'],
                 tool_filter=server_data.get('tool_filter'),
                 priority=server_data.get('priority', 1),
-                enabled=server_data.get('enabled', True)
+                enabled=server_data.get('enabled', True),
+                api_key=server_data.get('api_key')
             )
         else:
             raise ValueError(f"Server '{server_data['name']}' must have either 'cwd' or 'cwd_env' specified")
@@ -199,7 +204,8 @@ def normalize_config_dict(config_dict: Dict[str, Any]) -> AggregatorConfig:
                     cwd=server_data['cwd'],
                     tool_filter=server_data.get('tool_filter'),
                     priority=server_data.get('priority', 1),
-                    enabled=server_data.get('enabled', True)
+                    enabled=server_data.get('enabled', True),
+                    api_key=server_data.get('api_key')
                 )
             else:
                 # Backward compatibility
@@ -211,7 +217,8 @@ def normalize_config_dict(config_dict: Dict[str, Any]) -> AggregatorConfig:
                     cwd_env=server_data.get('cwd_env', ''),
                     tool_filter=server_data.get('tool_filter'),
                     priority=server_data.get('priority', 1),
-                    enabled=server_data.get('enabled', True)
+                    enabled=server_data.get('enabled', True),
+                    api_key=server_data.get('api_key')
                 )
             source_servers.append(server_config)
         else:

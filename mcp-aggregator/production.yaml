@@ -15,7 +15,7 @@ source_servers:
       "excel_copy_sheet"
     ]
     priority: 1
-    enabled: true
+    enabled: false
     
   - name: "analytics"
     command: "python3"

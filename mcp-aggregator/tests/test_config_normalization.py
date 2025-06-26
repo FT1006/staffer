@@ -80,7 +80,7 @@ class TestConfigNormalization:
                 name='excel',
                 command='go',
                 args=['run', 'main.go'],
-                cwd_env='EXCEL_PATH',
+                cwd='/path/to/excel',  # Direct path
                 enabled=True,
                 priority=1
             )
@@ -112,7 +112,7 @@ class TestConfigNormalization:
             name='existing',
             command='test',
             args=[],
-            cwd_env='EXISTING_PATH',
+            cwd='/path/to/existing',  # Direct path
             enabled=True
         )
         
@@ -126,7 +126,7 @@ class TestConfigNormalization:
                     'name': 'new_server',
                     'command': 'python',
                     'args': ['-m', 'server'],
-                    'cwd_env': 'NEW_PATH',
+                    'cwd': '/path/to/new_server',  # Direct path
                     'enabled': True
                 }
             ],
