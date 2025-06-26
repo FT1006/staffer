@@ -4,8 +4,8 @@ instruction: "Production Staffer tool aggregation service with environment-drive
 
 source_servers:
   - name: "excel"
-    command: "go"
-    args: ["run", "cmd/excel-mcp-server/main.go"]
+    command: "./excel-mcp-server"
+    args: []
     cwd_env: "EXCEL_MCP_PATH"
     tool_filter: [
       "excel_read_sheet",
@@ -18,8 +18,8 @@ source_servers:
     enabled: ${EXCEL_ENABLED:-true}
     
   - name: "analytics"
-    command: "python"
-    args: ["-m", "src.mcp_server.server"]
+    command: "python3"
+    args: ["main.py"]
     cwd_env: "ANALYTICS_MCP_PATH"
     tool_filter: [
       "load_dataset",

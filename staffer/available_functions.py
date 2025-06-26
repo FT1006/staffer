@@ -59,6 +59,11 @@ def _get_mcp_tool_declarations():
     Returns:
         List of types.FunctionDeclaration for MCP tools
     """
+    # Temporarily disable MCP integration to avoid schema validation issues
+    # TODO: Fix GenAI schema conversion for MCP tools
+    print("MCP tool integration temporarily disabled due to schema validation issues")
+    return []
+    
     # Skip MCP integration if components not available
     if not GenericMCPServerComposer:
         return []
