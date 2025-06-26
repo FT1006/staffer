@@ -40,60 +40,60 @@ class GenericMCPServerComposer:
         # Get server configurations from config
         server_configs = self._extract_server_configs()
         
+        print(f"DEBUG: Composer loaded {len(server_configs)} server configs")
+        for config in server_configs:
+            print(f"  - {config.name}: enabled={config.enabled}, available={config.is_available}")
+            if hasattr(config, 'tool_filter') and config.tool_filter:
+                print(f"    tool_filter: {config.tool_filter}")
+        
         if not server_configs:
             return []
         
-        # Use discovery engine to find tools from all servers concurrently
+        # Use discovery engine to get raw tools from all servers
+        available_configs = [cfg for cfg in server_configs if cfg.is_available]
+        raw_tools_by_server = await self.discovery_engine.discover_all_tools(available_configs)
+        
+        if not raw_tools_by_server:
+            return []
+        
+        # Apply filtering and conflict resolution in Composer (ADR-007)
         all_tools = {}
         
-        # Create discovery tasks for concurrent execution (only for available servers)
-        discovery_tasks = []
-        for server_config in server_configs:
-            if server_config.is_available:  # Only include available/enabled servers
-                discovery_tasks.append(self._discover_and_convert_tools(server_config))
-        
-        # Execute all discovery tasks concurrently
-        if discovery_tasks:
-            results = await asyncio.gather(*discovery_tasks, return_exceptions=True)
+        for server_name, server_data in raw_tools_by_server.items():
+            server_config = server_data['config']
+            server_tools = server_data['tools']
             
-            # Process results and handle conflicts
-            for i, result in enumerate(results):
-                server_config = server_configs[i]
+            # Apply tool filtering per server configuration
+            filtered_tools = self._apply_tool_filter(server_tools, server_config.tool_filter)
+            
+            print(f"DEBUG: {server_name} - {len(server_tools)} raw tools, {len(filtered_tools)} after filtering")
+            
+            # Convert filtered tools to GenAI format
+            genai_tools = self._convert_adk_tools_to_genai(list(filtered_tools.values()))
+            
+            # Apply conflict resolution by priority
+            for genai_tool in genai_tools:
+                tool_name = genai_tool.name
                 
-                if isinstance(result, Exception):
-                    # Handle server failure (config normalization ensures ServerConfig objects)
-                    server_name = server_config.name
-                    self.failed_servers.append(server_name)
-                    self.server_failures.append({
-                        'server': server_name,
-                        'error': str(result)
-                    })
-                    continue
-                
-                # Process successful results
-                genai_tools, server_priority, server_name = result
-                
-                # Handle conflict resolution by priority
-                for genai_tool in genai_tools:
-                    tool_name = genai_tool.name
-                    
-                    if tool_name in all_tools:
-                        # Conflict detected - use priority to resolve
-                        existing_priority = all_tools[tool_name]['priority']
-                        if server_priority > existing_priority:
-                            # Higher priority wins
-                            all_tools[tool_name] = {
-                                'tool': genai_tool,
-                                'priority': server_priority,
-                                'source': server_name
-                            }
-                    else:
-                        # No conflict, add tool
+                if tool_name in all_tools:
+                    # Conflict detected - use priority to resolve
+                    existing_priority = all_tools[tool_name]['priority']
+                    if server_config.priority > existing_priority:
+                        print(f"Conflict resolution: Using {tool_name} from {server_name} (priority {server_config.priority})")
                         all_tools[tool_name] = {
                             'tool': genai_tool,
-                            'priority': server_priority,
+                            'priority': server_config.priority,
                             'source': server_name
                         }
+                    else:
+                        print(f"Conflict resolution: Keeping {tool_name} from {all_tools[tool_name]['source']} (priority {existing_priority})")
+                else:
+                    # No conflict, add tool
+                    all_tools[tool_name] = {
+                        'tool': genai_tool,
+                        'priority': server_config.priority,
+                        'source': server_name
+                    }
         
         # Return just the tools (not the metadata) in GenAI format
         return [tool_info['tool'] for tool_info in all_tools.values()]
@@ -185,6 +185,28 @@ class GenericMCPServerComposer:
                 }
             )
         )
+    
+    def _apply_tool_filter(self, tools: Dict[str, Any], tool_filter: Optional[List[str]]) -> Dict[str, Any]:
+        """Apply tool filtering based on server configuration.
+        
+        Args:
+            tools: Raw tools discovered from server
+            tool_filter: List of tool names to include (None = include all)
+            
+        Returns:
+            Filtered tools dictionary
+        """
+        if not tool_filter:
+            # No filter specified - return all tools
+            return tools
+        
+        # Filter tools to only include those in the filter list
+        filtered_tools = {}
+        for tool_name, tool in tools.items():
+            if tool_name in tool_filter:
+                filtered_tools[tool_name] = tool
+        
+        return filtered_tools
     
     def _extract_server_configs(self) -> List[ServerConfig]:
         """Extract server configurations from the normalized config."""

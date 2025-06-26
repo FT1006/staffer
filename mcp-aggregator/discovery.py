@@ -15,8 +15,11 @@ class ToolDiscoveryEngine:
         self.conflicts = []
         self.cache = {}
     
-    async def discover_all_tools(self, server_configs: List[ServerConfig]) -> Dict[str, Any]:
-        """Discover tools from all configured sources."""
+    async def discover_all_tools(self, server_configs: List[ServerConfig]) -> Dict[str, Dict[str, Any]]:
+        """Discover raw tools from all configured sources.
+        
+        Returns tools grouped by server name for composer to handle filtering and conflicts.
+        """
         all_tools = {}
         
         # Process servers in parallel for performance
@@ -32,7 +35,7 @@ class ToolDiscoveryEngine:
         # Gather results from all servers
         server_results = await asyncio.gather(*tasks, return_exceptions=True)
         
-        # Combine tools from all servers
+        # Return raw tools grouped by server for composer to handle
         for i, result in enumerate(server_results):
             server_config = server_configs[i] if i < len(server_configs) else None
             
@@ -43,26 +46,13 @@ class ToolDiscoveryEngine:
             if not result:
                 continue
                 
-            # Check for naming conflicts
-            conflicts = set(result.keys()) & set(all_tools.keys())
-            if conflicts:
-                self.conflicts.extend([
-                    {
-                        'tool': tool, 
-                        'servers': [all_tools[tool]['source'], server_config.name]
-                    }
-                    for tool in conflicts
-                ])
-            
-            # Add tools with metadata
-            for tool_name, tool in result.items():
-                all_tools[tool_name] = {
-                    'tool': tool,
-                    'source': server_config.name,
-                    'priority': server_config.priority
-                }
+            # Store raw tools with server metadata (no conflict resolution here)
+            all_tools[server_config.name] = {
+                'tools': result,
+                'config': server_config
+            }
         
-        return self._resolve_conflicts(all_tools)
+        return all_tools
     
     async def _discover_server_tools(self, server_config: ServerConfig) -> Dict[str, Any]:
         """Discover tools from a single MCP server with caching."""
@@ -98,7 +88,10 @@ class ToolDiscoveryEngine:
             return {}
     
     def _create_mcp_toolset(self, server_config: ServerConfig) -> MCPToolset:
-        """Create MCPToolset from server configuration."""
+        """Create MCPToolset from server configuration.
+        
+        Note: Tool filtering is now handled by Composer, not Discovery Engine.
+        """
         server_params = StdioServerParameters(
             command=server_config.command,
             args=server_config.args,
@@ -110,29 +103,10 @@ class ToolDiscoveryEngine:
         )
         
         return MCPToolset(
-            connection_params=connection_params,
-            tool_filter=server_config.tool_filter
+            connection_params=connection_params
+            # No tool_filter - raw tools returned for Composer to filter
         )
     
-    def _resolve_conflicts(self, tools: Dict[str, Any]) -> Dict[str, Any]:
-        """Resolve tool name conflicts based on priority."""
-        resolved_tools = {}
-        
-        for tool_name, tool_info in tools.items():
-            if tool_name in resolved_tools:
-                # Keep higher priority tool
-                current_priority = resolved_tools[tool_name]['priority']
-                new_priority = tool_info['priority']
-                
-                if new_priority > current_priority:
-                    print(f"Conflict resolution: Using {tool_name} from {tool_info['source']} (priority {new_priority})")
-                    resolved_tools[tool_name] = tool_info
-                else:
-                    print(f"Conflict resolution: Keeping {tool_name} from {resolved_tools[tool_name]['source']} (priority {current_priority})")
-            else:
-                resolved_tools[tool_name] = tool_info
-        
-        return resolved_tools
     
     def get_discovery_stats(self) -> Dict[str, Any]:
         """Get statistics about tool discovery."""
