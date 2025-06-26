@@ -12,20 +12,26 @@ class ServerConfig:
     name: str
     command: str
     args: List[str]
-    cwd_env: str
+    cwd: str  # Direct path, not environment variable
     tool_filter: Optional[List[str]] = None
     priority: int = 1
     enabled: bool = True
+    # Keep backward compatibility with cwd_env for migration
+    cwd_env: Optional[str] = None
     
-    @property
-    def cwd(self) -> Optional[str]:
-        """Get working directory from environment variable."""
-        return os.getenv(self.cwd_env)
+    def __post_init__(self):
+        """Handle backward compatibility and direct path resolution."""
+        # If cwd_env is provided but cwd is not, resolve from environment
+        if self.cwd_env and not hasattr(self, '_cwd_resolved'):
+            env_path = os.getenv(self.cwd_env)
+            if env_path:
+                self.cwd = env_path
+            self._cwd_resolved = True
     
     @property
     def is_available(self) -> bool:
-        """Check if server is available (has required environment)."""
-        return self.enabled and self.cwd is not None
+        """Check if server is available (path exists and enabled)."""
+        return self.enabled and self.cwd and os.path.exists(self.cwd)
 
 
 @dataclass
@@ -83,25 +89,47 @@ def _substitute_env_vars(obj: Any) -> Any:
 
 
 def load_config(config_path: str = "aggregation.yaml") -> AggregatorConfig:
-    """Load configuration from YAML file with environment variable substitution."""
+    """Load configuration from YAML file.
+    
+    By default, uses direct YAML values (single source of truth).
+    Environment variable substitution only occurs for explicit ${VAR} patterns.
+    """
     with open(config_path, 'r') as f:
         config_data = yaml.safe_load(f)
     
-    # Substitute environment variables
+    # Apply environment variable substitution only for explicit ${VAR} patterns
     config_data = _substitute_env_vars(config_data)
     
     # Parse server configurations
     source_servers = []
     for server_data in config_data.get('source_servers', []):
-        server_config = ServerConfig(
-            name=server_data['name'],
-            command=server_data['command'],
-            args=server_data.get('args', []),
-            cwd_env=server_data['cwd_env'],
-            tool_filter=server_data.get('tool_filter'),
-            priority=server_data.get('priority', 1),
-            enabled=server_data.get('enabled', True)
-        )
+        # Support both direct 'cwd' and backward-compatible 'cwd_env'
+        if 'cwd' in server_data:
+            # Direct path configuration (preferred)
+            server_config = ServerConfig(
+                name=server_data['name'],
+                command=server_data['command'],
+                args=server_data.get('args', []),
+                cwd=server_data['cwd'],
+                tool_filter=server_data.get('tool_filter'),
+                priority=server_data.get('priority', 1),
+                enabled=server_data.get('enabled', True)
+            )
+        elif 'cwd_env' in server_data:
+            # Backward compatibility with environment variables
+            server_config = ServerConfig(
+                name=server_data['name'],
+                command=server_data['command'],
+                args=server_data.get('args', []),
+                cwd='',  # Will be resolved in __post_init__
+                cwd_env=server_data['cwd_env'],
+                tool_filter=server_data.get('tool_filter'),
+                priority=server_data.get('priority', 1),
+                enabled=server_data.get('enabled', True)
+            )
+        else:
+            raise ValueError(f"Server '{server_data['name']}' must have either 'cwd' or 'cwd_env' specified")
+        
         source_servers.append(server_config)
     
     return AggregatorConfig(
@@ -119,7 +147,7 @@ def validate_config(config: AggregatorConfig) -> List[str]:
     
     # Check if any servers are available
     if not config.available_servers:
-        issues.append("No MCP servers are available (check environment variables)")
+        issues.append("No MCP servers are available (check paths and enabled status)")
     
     # Check for required fields
     if not config.domain:
@@ -130,8 +158,14 @@ def validate_config(config: AggregatorConfig) -> List[str]:
     
     # Check server configuration
     for server in config.source_servers:
-        if server.enabled and not server.cwd:
-            issues.append(f"Server '{server.name}' is enabled but {server.cwd_env} environment variable not set")
+        if server.enabled:
+            if not server.cwd:
+                if server.cwd_env:
+                    issues.append(f"Server '{server.name}' is enabled but {server.cwd_env} environment variable not set")
+                else:
+                    issues.append(f"Server '{server.name}' is enabled but no path specified")
+            elif not os.path.exists(server.cwd):
+                issues.append(f"Server '{server.name}' path does not exist: {server.cwd}")
     
     return issues
 
@@ -156,15 +190,29 @@ def normalize_config_dict(config_dict: Dict[str, Any]) -> AggregatorConfig:
             source_servers.append(server_data)
         elif isinstance(server_data, dict):
             # Convert dict to ServerConfig
-            server_config = ServerConfig(
-                name=server_data.get('name', 'unknown'),
-                command=server_data.get('command', ''),
-                args=server_data.get('args', []),
-                cwd_env=server_data.get('cwd_env', ''),
-                tool_filter=server_data.get('tool_filter'),
-                priority=server_data.get('priority', 1),
-                enabled=server_data.get('enabled', True)
-            )
+            # Support both direct 'cwd' and backward-compatible 'cwd_env'
+            if 'cwd' in server_data:
+                server_config = ServerConfig(
+                    name=server_data.get('name', 'unknown'),
+                    command=server_data.get('command', ''),
+                    args=server_data.get('args', []),
+                    cwd=server_data['cwd'],
+                    tool_filter=server_data.get('tool_filter'),
+                    priority=server_data.get('priority', 1),
+                    enabled=server_data.get('enabled', True)
+                )
+            else:
+                # Backward compatibility
+                server_config = ServerConfig(
+                    name=server_data.get('name', 'unknown'),
+                    command=server_data.get('command', ''),
+                    args=server_data.get('args', []),
+                    cwd='',
+                    cwd_env=server_data.get('cwd_env', ''),
+                    tool_filter=server_data.get('tool_filter'),
+                    priority=server_data.get('priority', 1),
+                    enabled=server_data.get('enabled', True)
+                )
             source_servers.append(server_config)
         else:
             # Skip invalid server configs (None, strings, numbers, etc.)

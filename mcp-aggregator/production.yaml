@@ -1,12 +1,12 @@
 domain: "staffer_production_tools"
 model: "gemini-2.0-flash"
-instruction: "Production Staffer tool aggregation service with environment-driven configuration."
+instruction: "Production Staffer tool aggregation service with direct YAML configuration."
 
 source_servers:
   - name: "excel"
     command: "./excel-mcp-server"
     args: []
-    cwd_env: "EXCEL_MCP_PATH"
+    cwd: "/path/to/excel-mcp-server"  # Direct path - update this to your actual path
     tool_filter: [
       "excel_read_sheet",
       "excel_write_to_sheet", 
@@ -15,12 +15,12 @@ source_servers:
       "excel_copy_sheet"
     ]
     priority: 1
-    enabled: ${EXCEL_ENABLED:-true}
+    enabled: true
     
   - name: "analytics"
     command: "python3"
     args: ["main.py"]
-    cwd_env: "ANALYTICS_MCP_PATH"
+    cwd: "/path/to/analytics-mcp-server"  # Direct path - update this to your actual path
     tool_filter: [
       "load_dataset",
       "find_correlations",
@@ -32,11 +32,11 @@ source_servers:
       "validate_data_quality"
     ]
     priority: 2
-    enabled: ${ANALYTICS_ENABLED:-true}
+    enabled: true
 
 tool_selection:
   strategy: "curated"
   exclude_patterns: ["debug_", "internal_", "test_", "_test"]
-  max_tools_per_server: ${MAX_TOOLS_PER_SERVER:-25}
+  max_tools_per_server: 25
 
 # NO server section - STDIO protocol only
