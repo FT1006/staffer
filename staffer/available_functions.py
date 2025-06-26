@@ -11,6 +11,18 @@ from .functions.run_python_file import schema_run_python_file, run_python_file
 from .functions.get_working_directory import schema_get_working_directory, get_working_directory
 
 # Import MCP aggregator components
+import logging
+import warnings
+import os
+
+# Configure quiet logging for MCP operations
+logging.getLogger('google_adk').setLevel(logging.ERROR)
+logging.getLogger('asyncio').setLevel(logging.CRITICAL)
+
+# Suppress noisy warnings
+warnings.filterwarnings("ignore", message=".*BaseAuthenticatedTool.*")
+warnings.filterwarnings("ignore", message=".*auth_config.*")
+
 try:
     import sys
     # Get the staffer project root directory and add mcp-aggregator to path
@@ -72,12 +84,19 @@ def _get_mcp_tool_declarations():
         config_path = os.getenv('MCP_CONFIG_PATH', 
                               os.path.join(os.path.dirname(__file__), '..', 'mcp-aggregator', 'production.yaml'))
         
-        # Get MCP tools via composer
+        # Get MCP tools via composer with quiet operation
         def _run_discovery():
             try:
-                return asyncio.run(_async_get_mcp_tools(config_path))
+                print("Discovering tools...", end="", flush=True)
+                # Suppress both stdout and stderr to hide all MCP noise
+                import contextlib
+                import sys
+                with contextlib.redirect_stderr(open(os.devnull, 'w')), \
+                     contextlib.redirect_stdout(open(os.devnull, 'w')):
+                    result = asyncio.run(_async_get_mcp_tools(config_path))
+                return result
             except Exception as e:
-                print(f"MCP tool discovery failed: {e}")
+                print(f"\nMCP tool discovery failed: {e}")
                 return []
         
         # Use thread to avoid event loop conflicts
@@ -92,12 +111,32 @@ def _get_mcp_tool_declarations():
         thread.join(timeout=5)  # 5 second timeout
         
         if thread.is_alive():
-            print("MCP tool discovery timed out")
+            print("\nMCP tool discovery timed out")
             return []
         
         try:
-            return result_queue.get_nowait()
+            tools = result_queue.get_nowait()
+            if tools:
+                # Count tools by category for summary
+                excel_count = sum(1 for tool in tools if 'excel' in tool.name.lower())
+                analytics_count = sum(1 for tool in tools if any(keyword in tool.name.lower() 
+                                                               for keyword in ['load', 'chart', 'correlations', 'segment', 'analyze', 'detect', 'time_series', 'validate']))
+                other_count = len(tools) - excel_count - analytics_count
+                
+                summary_parts = []
+                if excel_count > 0:
+                    summary_parts.append(f"{excel_count} Excel")
+                if analytics_count > 0:
+                    summary_parts.append(f"{analytics_count} Analytics")
+                if other_count > 0:
+                    summary_parts.append(f"{other_count} Other")
+                
+                print(f"\nFound {len(tools)} tools ({', '.join(summary_parts)})")
+            else:
+                print("\nNo tools found")
+            return tools
         except queue.Empty:
+            print("\nNo tools discovered")
             return []
             
     except Exception as e:
@@ -120,7 +159,7 @@ async def _async_get_mcp_tools(config_path):
             safe_decl = process_mcp_tool_schema(tool)
             safe_declarations.append(safe_decl)
         except Exception as e:
-            print(f"Warning: Could not process tool {tool.name}: {e}")
+            # Quietly skip problematic tools
             continue
     
     return safe_declarations
@@ -258,14 +297,13 @@ def _call_mcp_tool_via_composer(tool_name: str, arguments: dict):
         if (isinstance(result, dict) and "error" in result and 
             prepared_arguments != abs_arguments):
             
-            print(f"MCP tool {tool_name} failed with tool-specific strategy, trying absolute paths...")
+            # Quietly try fallback strategies without verbose messages
             result = _execute_with_timeout(abs_arguments)
             
             # If absolute paths also failed, try with original arguments as last resort
             if (isinstance(result, dict) and "error" in result and 
                 abs_arguments != arguments):
                 
-                print(f"MCP tool {tool_name} failed with absolute paths, trying original arguments...")
                 result = _execute_with_timeout(arguments)
         
         # Handle the result

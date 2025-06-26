@@ -285,7 +285,8 @@ def process_mcp_tool_schema(tool) -> types.FunctionDeclaration:
             
             except Exception as schema_error:
                 # Schema has issues (like cyclical references), fall back to simplified schema
-                print(f"Warning: Tool {tool.name} has problematic schema, using simplified version: {type(schema_error).__name__}")
+                # Quietly log but don't print to avoid UI clutter
+                pass
         
         # Create fallback schema
         fallback_schema = create_fallback_schema_for_tool(tool.name, tool.description)
@@ -297,7 +298,7 @@ def process_mcp_tool_schema(tool) -> types.FunctionDeclaration:
         )
         
     except Exception as e:
-        print(f"Error processing tool {tool.name}: {e}")
+        # Quietly handle errors without cluttering UI
         # Last resort - generic schema
         generic_schema = _create_generic_fallback_schema(tool.name, getattr(tool, 'description', ''))
         return types.FunctionDeclaration(
