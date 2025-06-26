@@ -13,12 +13,14 @@ from .functions.get_working_directory import schema_get_working_directory, get_w
 # Import MCP aggregator components
 try:
     import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'mcp-aggregator'))
+    # Get the staffer project root directory and add mcp-aggregator to path
+    staffer_root = os.path.dirname(os.path.dirname(__file__))
+    mcp_aggregator_path = os.path.join(staffer_root, 'mcp-aggregator')
+    sys.path.insert(0, mcp_aggregator_path)
     from composer import GenericMCPServerComposer
-    from adk_translator import HybridToolToGenAIConverter
-except ImportError:
+except ImportError as e:
+    print(f"Warning: Could not import MCP components: {e}")
     GenericMCPServerComposer = None
-    HybridToolToGenAIConverter = None
 
 
 available_functions = types.Tool(
@@ -58,7 +60,7 @@ def _get_mcp_tool_declarations():
         List of types.FunctionDeclaration for MCP tools
     """
     # Skip MCP integration if components not available
-    if not GenericMCPServerComposer or not HybridToolToGenAIConverter:
+    if not GenericMCPServerComposer:
         return []
     
     try:
@@ -104,32 +106,11 @@ async def _async_get_mcp_tools(config_path):
     # Initialize composer
     composer = GenericMCPServerComposer.from_config(config_path)
     
-    # Get all tools from MCP servers
-    tools = await composer.get_all_tools()
+    # Get all tools from MCP servers (these are already GenAI FunctionDeclaration objects)
+    genai_tools = await composer.get_all_tools()
     
-    # Convert to GenAI format
-    converter = HybridToolToGenAIConverter()
-    genai_tools = converter.convert_to_genai_tools(tools)
-    
-    # Convert to function declarations
-    declarations = []
-    for tool_dict in genai_tools:
-        try:
-            func_decl = types.FunctionDeclaration(
-                name=tool_dict["name"],
-                description=tool_dict.get("description", f"MCP tool: {tool_dict['name']}"),
-                parameters=tool_dict.get("parameters", {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                })
-            )
-            declarations.append(func_decl)
-        except Exception:
-            # Skip malformed tools
-            continue
-    
-    return declarations
+    # The composer already returns GenAI FunctionDeclaration objects, so just return them
+    return genai_tools
 
 
 # Remove old MCP client code since we're using composer directly
@@ -165,12 +146,12 @@ def call_function(function_call_part, working_directory, verbose=False):
             ],
         )
     
-    # If not built-in, try MCP tools
+    # If not built-in, try MCP tools via composer
     mcp_result = None
     mcp_error = None
     
     try:
-        mcp_result = _call_mcp_tool(function_call_part.name, args)
+        mcp_result = _call_mcp_tool_via_composer(function_call_part.name, args)
     except Exception as e:
         mcp_error = str(e)
     
@@ -206,50 +187,61 @@ def call_function(function_call_part, working_directory, verbose=False):
     )
 
 
-def _call_mcp_tool(tool_name: str, arguments: dict):
-    """Execute MCP tool through StafferMCPClient.
+def _call_mcp_tool_via_composer(tool_name: str, arguments: dict):
+    """Execute MCP tool through composer directly.
     
     Returns:
         Tool result or None if tool not available
     """
-    import os
-    import threading
-    import queue
-    
-    # Create MCP client with environment-based configuration
-    mcp_client = StafferMCPClient({
-        'aggregator_path': os.getenv('MCP_AGGREGATOR_PATH', '/Users/spaceship/project/staffer/mcp-aggregator'),
-        'aggregator_config': os.getenv('MCP_AGGREGATOR_CONFIG', 'test_config.yaml'),
-        'timeout': float(os.getenv('MCP_TIMEOUT', '10.0'))
-    })
-    
-    # Handle async execution regardless of current event loop state
-    def _run_mcp_tool():
-        """Run MCP tool in separate thread to avoid event loop conflicts."""
-        try:
-            return asyncio.run(mcp_client.call_tool(tool_name, arguments))
-        except Exception as e:
-            return {"error": str(e)}
-    
-    # Execute in separate thread to avoid event loop conflicts
-    result_queue = queue.Queue()
-    
-    def thread_worker():
-        result = _run_mcp_tool()
-        result_queue.put(result)
-    
-    thread = threading.Thread(target=thread_worker)
-    thread.start()
-    thread.join(timeout=15)  # 15 second timeout
-    
-    if thread.is_alive():
-        # Timeout occurred
-        return {"error": "MCP tool execution timed out"}
+    # Skip MCP execution if components not available
+    if not GenericMCPServerComposer:
+        return None
     
     try:
-        result = result_queue.get_nowait()
-        if isinstance(result, dict) and "error" in result:
-            return None  # Will be handled as failure
-        return result
-    except queue.Empty:
+        # Get config path
+        config_path = os.getenv('MCP_CONFIG_PATH', 
+                              os.path.join(os.path.dirname(__file__), '..', 'mcp-aggregator', 'production.yaml'))
+        
+        def _run_mcp_tool():
+            """Run MCP tool via composer."""
+            try:
+                return asyncio.run(_async_call_mcp_tool(config_path, tool_name, arguments))
+            except Exception as e:
+                return {"error": str(e)}
+        
+        # Use thread to avoid event loop conflicts
+        result_queue = queue.Queue()
+        
+        def thread_worker():
+            result = _run_mcp_tool()
+            result_queue.put(result)
+        
+        thread = threading.Thread(target=thread_worker)
+        thread.start()
+        thread.join(timeout=15)  # 15 second timeout
+        
+        if thread.is_alive():
+            return {"error": "MCP tool execution timed out"}
+        
+        try:
+            result = result_queue.get_nowait()
+            if isinstance(result, dict) and "error" in result:
+                return None  # Will be handled as failure
+            return result
+        except queue.Empty:
+            return None
+            
+    except Exception as e:
+        print(f"MCP tool execution error: {e}")
         return None
+
+
+async def _async_call_mcp_tool(config_path: str, tool_name: str, arguments: dict):
+    """Async helper to execute MCP tool via composer."""
+    # Initialize composer
+    composer = GenericMCPServerComposer.from_config(config_path)
+    
+    # Execute tool
+    result = await composer.call_tool(tool_name, arguments)
+    
+    return result

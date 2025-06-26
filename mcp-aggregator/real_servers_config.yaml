@@ -1,0 +1,17 @@
+# Real MCP servers configuration for testing
+source_servers:
+  - name: "excel"
+    command: "./excel-mcp-server"
+    args: []
+    cwd_env: "EXCEL_MCP_PATH"
+    env:
+      EXCEL_MCP_PAGING_CELLS_LIMIT: "4000"
+    enabled: true
+    priority: 1
+    
+  - name: "quick-data"
+    command: "python3"
+    args: ["main.py"]
+    cwd_env: "QUICK_DATA_MCP_PATH"
+    enabled: true
+    priority: 2

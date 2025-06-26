@@ -17,6 +17,17 @@ class GenericMCPServerComposer:
         self.server_failures = []  # Track failures for monitoring
         self.discovery_engine = ToolDiscoveryEngine()
     
+    @classmethod
+    def from_config(cls, config_path: str):
+        """Create composer from YAML config file."""
+        from config import load_config
+        aggregator_config = load_config(config_path)
+        # Store ServerConfig objects directly instead of converting to dicts
+        config_dict = {
+            'source_servers': aggregator_config.source_servers
+        }
+        return cls(config_dict)
+    
     async def get_all_tools(self) -> List[Any]:
         """Get aggregated tools from all configured servers, converted to GenAI format."""
         # Get server configurations from config
