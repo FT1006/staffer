@@ -22,6 +22,10 @@ except ImportError as e:
     print(f"Warning: Could not import MCP components: {e}")
     GenericMCPServerComposer = None
 
+# Import centralized schema and path handling
+from .mcp_schema_handler import process_mcp_tool_schema
+from .mcp_path_handler import prepare_arguments_for_tool, convert_relative_to_absolute_paths
+
 
 available_functions = types.Tool(
     function_declarations=[
@@ -59,11 +63,6 @@ def _get_mcp_tool_declarations():
     Returns:
         List of types.FunctionDeclaration for MCP tools
     """
-    # Temporarily disable MCP integration to avoid schema validation issues
-    # TODO: Fix GenAI schema conversion for MCP tools
-    print("MCP tool integration temporarily disabled due to schema validation issues")
-    return []
-    
     # Skip MCP integration if components not available
     if not GenericMCPServerComposer:
         return []
@@ -111,11 +110,20 @@ async def _async_get_mcp_tools(config_path):
     # Initialize composer
     composer = GenericMCPServerComposer.from_config(config_path)
     
-    # Get all tools from MCP servers (these are already GenAI FunctionDeclaration objects)
+    # Get all tools from MCP servers 
     genai_tools = await composer.get_all_tools()
     
-    # The composer already returns GenAI FunctionDeclaration objects, so just return them
-    return genai_tools
+    # Process each tool through centralized schema handler
+    safe_declarations = []
+    for tool in genai_tools:
+        try:
+            safe_decl = process_mcp_tool_schema(tool)
+            safe_declarations.append(safe_decl)
+        except Exception as e:
+            print(f"Warning: Could not process tool {tool.name}: {e}")
+            continue
+    
+    return safe_declarations
 
 
 # Remove old MCP client code since we're using composer directly
@@ -207,34 +215,64 @@ def _call_mcp_tool_via_composer(tool_name: str, arguments: dict):
         config_path = os.getenv('MCP_CONFIG_PATH', 
                               os.path.join(os.path.dirname(__file__), '..', 'mcp-aggregator', 'production.yaml'))
         
-        def _run_mcp_tool():
-            """Run MCP tool via composer."""
+        # Strategy: Use tool-specific path handling with graceful fallback
+        working_dir = os.getcwd()
+        
+        # First attempt: Prepare arguments using tool-specific strategy
+        prepared_arguments = prepare_arguments_for_tool(tool_name, arguments, working_dir)
+        
+        # Fallback attempt: Use absolute paths if tool-specific strategy fails
+        abs_arguments = convert_relative_to_absolute_paths(arguments, working_dir)
+        
+        def _run_mcp_tool_with_args(args_to_use):
+            """Run MCP tool via composer with given arguments."""
             try:
-                return asyncio.run(_async_call_mcp_tool(config_path, tool_name, arguments))
+                return asyncio.run(_async_call_mcp_tool(config_path, tool_name, args_to_use))
             except Exception as e:
                 return {"error": str(e)}
         
-        # Use thread to avoid event loop conflicts
-        result_queue = queue.Queue()
+        def _execute_with_timeout(args_to_use):
+            """Execute MCP tool with timeout handling."""
+            result_queue = queue.Queue()
+            
+            def thread_worker():
+                result = _run_mcp_tool_with_args(args_to_use)
+                result_queue.put(result)
+            
+            thread = threading.Thread(target=thread_worker)
+            thread.start()
+            thread.join(timeout=15)  # 15 second timeout
+            
+            if thread.is_alive():
+                return {"error": "MCP tool execution timed out"}
+            
+            try:
+                return result_queue.get_nowait()
+            except queue.Empty:
+                return {"error": "No result returned"}
         
-        def thread_worker():
-            result = _run_mcp_tool()
-            result_queue.put(result)
+        # Try with tool-specific prepared arguments first
+        result = _execute_with_timeout(prepared_arguments)
         
-        thread = threading.Thread(target=thread_worker)
-        thread.start()
-        thread.join(timeout=15)  # 15 second timeout
+        # If tool-specific strategy failed, try with absolute paths
+        if (isinstance(result, dict) and "error" in result and 
+            prepared_arguments != abs_arguments):
+            
+            print(f"MCP tool {tool_name} failed with tool-specific strategy, trying absolute paths...")
+            result = _execute_with_timeout(abs_arguments)
+            
+            # If absolute paths also failed, try with original arguments as last resort
+            if (isinstance(result, dict) and "error" in result and 
+                abs_arguments != arguments):
+                
+                print(f"MCP tool {tool_name} failed with absolute paths, trying original arguments...")
+                result = _execute_with_timeout(arguments)
         
-        if thread.is_alive():
-            return {"error": "MCP tool execution timed out"}
+        # Handle the result
+        if isinstance(result, dict) and "error" in result:
+            return None  # Will be handled as failure
         
-        try:
-            result = result_queue.get_nowait()
-            if isinstance(result, dict) and "error" in result:
-                return None  # Will be handled as failure
-            return result
-        except queue.Empty:
-            return None
+        return result
             
     except Exception as e:
         print(f"MCP tool execution error: {e}")
