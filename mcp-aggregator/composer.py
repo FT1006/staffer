@@ -46,10 +46,11 @@ class GenericMCPServerComposer:
         # Use discovery engine to find tools from all servers concurrently
         all_tools = {}
         
-        # Create discovery tasks for concurrent execution
+        # Create discovery tasks for concurrent execution (only for available servers)
         discovery_tasks = []
         for server_config in server_configs:
-            discovery_tasks.append(self._discover_and_convert_tools(server_config))
+            if server_config.is_available:  # Only include available/enabled servers
+                discovery_tasks.append(self._discover_and_convert_tools(server_config))
         
         # Execute all discovery tasks concurrently
         if discovery_tasks:
