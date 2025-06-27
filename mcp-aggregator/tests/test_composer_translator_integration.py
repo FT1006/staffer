@@ -16,7 +16,7 @@ except ImportError:
     GenericMCPServerComposer = None
 
 try:
-    from adk_translator import convert_adk_tool_to_genai
+    from adk_to_genai import convert_adk_tool_to_genai
 except ImportError:
     convert_adk_tool_to_genai = None
 
@@ -247,7 +247,7 @@ class TestProperImportStructure:
         """Test adk_translator is available as independent module - should fail first."""
         # This tests that translator is properly moved to aggregator
         try:
-            from adk_translator import convert_adk_tool_to_genai
+            from adk_to_genai import convert_adk_tool_to_genai
             assert convert_adk_tool_to_genai is not None
             assert callable(convert_adk_tool_to_genai)
         except ImportError:

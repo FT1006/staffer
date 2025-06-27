@@ -1,7 +1,7 @@
 """Tests for ADK to GenAI tool translation."""
 import pytest
 import google.generativeai as genai
-from adk_translator import convert_adk_tool_to_genai
+from adk_to_genai import convert_adk_tool_to_genai
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))

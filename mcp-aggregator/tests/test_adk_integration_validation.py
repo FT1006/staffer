@@ -18,7 +18,7 @@ from tests.factories import create_mock_adk_tool, create_test_server_config, cre
 from config import load_config, ServerConfig
 from composer import GenericMCPServerComposer
 from discovery import ToolDiscoveryEngine
-from adk_translator import convert_adk_tool_to_genai
+from adk_to_genai import convert_adk_tool_to_genai
 
 
 class TestRealADKToolDiscovery:
