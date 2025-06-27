@@ -7,7 +7,7 @@ setup(
     author="Staffer Team",
     packages=find_packages(),
     install_requires=[
-        "google-genai==1.12.1",
+        "google-genai>=1.12.1",
         "python-dotenv==1.1.0",
     ],
     entry_points={

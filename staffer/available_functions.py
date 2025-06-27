@@ -1,10 +1,42 @@
 from google.genai import types
+import asyncio
+import os
+import threading
+import queue
 
 from .functions.get_files_info import schema_get_files_info, get_files_info
 from .functions.get_file_content import schema_get_file_content, get_file_content
 from .functions.write_file import schema_write_file, write_file
 from .functions.run_python_file import schema_run_python_file, run_python_file
 from .functions.get_working_directory import schema_get_working_directory, get_working_directory
+
+# Import MCP aggregator components
+import logging
+import warnings
+import os
+
+# Configure quiet logging for MCP operations
+logging.getLogger('google_adk').setLevel(logging.ERROR)
+logging.getLogger('asyncio').setLevel(logging.CRITICAL)
+
+# Suppress noisy warnings
+warnings.filterwarnings("ignore", message=".*BaseAuthenticatedTool.*")
+warnings.filterwarnings("ignore", message=".*auth_config.*")
+
+try:
+    import sys
+    # Get the staffer project root directory and add mcp-aggregator to path
+    staffer_root = os.path.dirname(os.path.dirname(__file__))
+    mcp_aggregator_path = os.path.join(staffer_root, 'mcp-aggregator')
+    sys.path.insert(0, mcp_aggregator_path)
+    from composer import GenericMCPServerComposer
+except ImportError as e:
+    print(f"Warning: Could not import MCP components: {e}")
+    GenericMCPServerComposer = None
+
+# Import centralized schema and path handling
+from .mcp_schema_handler import process_mcp_tool_schema
+from .mcp_path_handler import prepare_arguments_for_tool, convert_relative_to_absolute_paths
 
 
 available_functions = types.Tool(
@@ -18,7 +50,123 @@ available_functions = types.Tool(
 )
 
 def get_available_functions(working_dir):
-    return available_functions
+    """Get all available functions - built-in and MCP tools.
+    
+    Args:
+        working_dir: Current working directory
+        
+    Returns:
+        types.Tool with combined function declarations
+    """
+    # Get built-in function declarations
+    built_in_declarations = list(available_functions.function_declarations)
+    
+    # Get MCP tool declarations
+    mcp_declarations = _get_mcp_tool_declarations()
+    
+    # Combine and return
+    combined_declarations = built_in_declarations + mcp_declarations
+    return types.Tool(function_declarations=combined_declarations)
+
+
+def _get_mcp_tool_declarations():
+    """Get MCP tool declarations from composer.
+    
+    Returns:
+        List of types.FunctionDeclaration for MCP tools
+    """
+    # Skip MCP integration if components not available
+    if not GenericMCPServerComposer:
+        return []
+    
+    try:
+        # Get MCP tools via composer with quiet operation
+        def _run_discovery():
+            try:
+                print("Discovering tools...", end="", flush=True)
+                # Suppress both stdout and stderr to hide all MCP noise
+                import contextlib
+                import sys
+                with contextlib.redirect_stderr(open(os.devnull, 'w')), \
+                     contextlib.redirect_stdout(open(os.devnull, 'w')):
+                    result = asyncio.run(_async_get_mcp_tools())
+                return result
+            except Exception as e:
+                print(f"\nMCP tool discovery failed: {e}")
+                return []
+        
+        # Use thread to avoid event loop conflicts
+        result_queue = queue.Queue()
+        
+        def thread_worker():
+            result = _run_discovery()
+            result_queue.put(result)
+        
+        thread = threading.Thread(target=thread_worker)
+        thread.start()
+        thread.join(timeout=5)  # 5 second timeout
+        
+        if thread.is_alive():
+            print("\nMCP tool discovery timed out")
+            return []
+        
+        try:
+            tools = result_queue.get_nowait()
+            if tools:
+                # Count tools by category for summary
+                excel_count = sum(1 for tool in tools if 'excel' in tool.name.lower())
+                analytics_count = sum(1 for tool in tools if any(keyword in tool.name.lower() 
+                                                               for keyword in ['load', 'chart', 'correlations', 'segment', 'analyze', 'detect', 'time_series', 'validate']))
+                other_count = len(tools) - excel_count - analytics_count
+                
+                summary_parts = []
+                if excel_count > 0:
+                    summary_parts.append(f"{excel_count} Excel")
+                if analytics_count > 0:
+                    summary_parts.append(f"{analytics_count} Analytics")
+                if other_count > 0:
+                    summary_parts.append(f"{other_count} Other")
+                
+                print(f"\nFound {len(tools)} tools ({', '.join(summary_parts)})")
+            else:
+                print("\nNo tools found")
+            return tools
+        except queue.Empty:
+            print("\nNo tools discovered")
+            return []
+            
+    except Exception as e:
+        print(f"MCP integration error: {e}")
+        return []
+
+
+async def _async_get_mcp_tools():
+    """Async helper to get MCP tools from composer."""
+    # Initialize composer (MCP aggregator handles its own configuration)
+    from config import load_config
+    aggregator_config = load_config()  # Uses MCP's own default config
+    config_dict = {
+        'source_servers': aggregator_config.source_servers
+    }
+    composer = GenericMCPServerComposer(config_dict)
+    
+    # Get all tools from MCP servers 
+    genai_tools = await composer.get_all_tools()
+    
+    # Process each tool through centralized schema handler
+    safe_declarations = []
+    for tool in genai_tools:
+        try:
+            safe_decl = process_mcp_tool_schema(tool)
+            safe_declarations.append(safe_decl)
+        except Exception as e:
+            # Quietly skip problematic tools
+            continue
+    
+    return safe_declarations
+
+
+# Remove old MCP client code since we're using composer directly
 
 def call_function(function_call_part, working_directory, verbose=False):
     if verbose:
@@ -29,6 +177,7 @@ def call_function(function_call_part, working_directory, verbose=False):
     args = function_call_part.args or {}
     function_name = function_call_part.name.lower()
 
+    # Built-in function registry
     function_dict = {
         "get_files_info": get_files_info,
         "get_file_content": get_file_content,
@@ -37,25 +186,145 @@ def call_function(function_call_part, working_directory, verbose=False):
         "get_working_directory": get_working_directory
     }
 
-    if function_name not in function_dict:
+    # First, try built-in functions
+    if function_name in function_dict:
+        function_result = function_dict[function_name](working_directory, **args)
         return types.Content(
             role="tool",
             parts=[
                 types.Part.from_function_response(
                     name=function_name,
-                    response={"error": f"Unknown function: {function_name}"},
+                    response={"result": function_result},
                 )
             ],
         )
     
-    function_result = function_dict[function_name](working_directory, **args)
-
-    return types.Content(
-    role="tool",
-    parts=[
-        types.Part.from_function_response(
-            name=function_name,
-            response={"result": function_result},
+    # If not built-in, try MCP tools via composer
+    mcp_result = None
+    mcp_error = None
+    
+    try:
+        mcp_result = _call_mcp_tool_via_composer(function_call_part.name, args)
+    except Exception as e:
+        mcp_error = str(e)
+    
+    if mcp_result:
+        return types.Content(
+            role="tool",
+            parts=[
+                types.Part.from_function_response(
+                    name=function_name,
+                    response={"result": mcp_result},
+                )
+            ],
         )
-    ],
-)
+    
+    # Neither built-in nor MCP tool found - provide helpful error
+    error_msg = f"Unknown function: {function_name}"
+    if mcp_error:
+        error_msg += f" (MCP error: {mcp_error})"
+    elif mcp_result is None:
+        error_msg += " (MCP aggregator not available)"
+    
+    if verbose:
+        print(f"Function execution failed: {error_msg}")
+    
+    return types.Content(
+        role="tool",
+        parts=[
+            types.Part.from_function_response(
+                name=function_name,
+                response={"error": error_msg},
+            )
+        ],
+    )
+
+
+def _call_mcp_tool_via_composer(tool_name: str, arguments: dict):
+    """Execute MCP tool through composer directly.
+    
+    Returns:
+        Tool result or None if tool not available
+    """
+    # Skip MCP execution if components not available
+    if not GenericMCPServerComposer:
+        return None
+    
+    try:
+        # Strategy: Use tool-specific path handling with graceful fallback
+        working_dir = os.getcwd()
+        
+        # First attempt: Prepare arguments using tool-specific strategy
+        prepared_arguments = prepare_arguments_for_tool(tool_name, arguments, working_dir)
+        
+        # Fallback attempt: Use absolute paths if tool-specific strategy fails
+        abs_arguments = convert_relative_to_absolute_paths(arguments, working_dir)
+        
+        def _run_mcp_tool_with_args(args_to_use):
+            """Run MCP tool via composer with given arguments."""
+            try:
+                return asyncio.run(_async_call_mcp_tool(tool_name, args_to_use))
+            except Exception as e:
+                return {"error": str(e)}
+        
+        def _execute_with_timeout(args_to_use):
+            """Execute MCP tool with timeout handling."""
+            result_queue = queue.Queue()
+            
+            def thread_worker():
+                result = _run_mcp_tool_with_args(args_to_use)
+                result_queue.put(result)
+            
+            thread = threading.Thread(target=thread_worker)
+            thread.start()
+            thread.join(timeout=15)  # 15 second timeout
+            
+            if thread.is_alive():
+                return {"error": "MCP tool execution timed out"}
+            
+            try:
+                return result_queue.get_nowait()
+            except queue.Empty:
+                return {"error": "No result returned"}
+        
+        # Try with tool-specific prepared arguments first
+        result = _execute_with_timeout(prepared_arguments)
+        
+        # If tool-specific strategy failed, try with absolute paths
+        if (isinstance(result, dict) and "error" in result and 
+            prepared_arguments != abs_arguments):
+            
+            # Quietly try fallback strategies without verbose messages
+            result = _execute_with_timeout(abs_arguments)
+            
+            # If absolute paths also failed, try with original arguments as last resort
+            if (isinstance(result, dict) and "error" in result and 
+                abs_arguments != arguments):
+                
+                result = _execute_with_timeout(arguments)
+        
+        # Handle the result
+        if isinstance(result, dict) and "error" in result:
+            return None  # Will be handled as failure
+        
+        return result
+            
+    except Exception as e:
+        print(f"MCP tool execution error: {e}")
+        return None
+
+
+async def _async_call_mcp_tool(tool_name: str, arguments: dict):
+    """Async helper to execute MCP tool via composer."""
+    # Initialize composer (MCP aggregator handles its own configuration)
+    from config import load_config
+    aggregator_config = load_config()  # Uses MCP's own default config
+    config_dict = {
+        'source_servers': aggregator_config.source_servers
+    }
+    composer = GenericMCPServerComposer(config_dict)
+    
+    # Execute tool
+    result = await composer.call_tool(tool_name, arguments)
+    
+    return result
